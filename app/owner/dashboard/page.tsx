@@ -216,7 +216,7 @@ export default async function OwnerDashboardPage({
   const weekWageTotal = calculateTotalWage(weekEntries);
 
   // Agregasi top penjahit minggu ini (performa upah)
-  const userWeekMap: Record<string, { nama: string; pcs: number; upah: number }> = {};
+  const userWeekMap: Record<string, { userId: string; nama: string; pcs: number; upah: number }> = {};
   weekEntries.forEach((e) => {
     const qty = Number(e.qty_disetujui || 0);
     const tarif = Number(e.tarif_snapshot || 500);
@@ -224,6 +224,7 @@ export default async function OwnerDashboardPage({
 
     if (!userWeekMap[e.user_id]) {
       userWeekMap[e.user_id] = {
+        userId: e.user_id,
         nama: e.users?.nama || "Penjahit",
         pcs: 0,
         upah: 0,
@@ -790,9 +791,12 @@ export default async function OwnerDashboardPage({
                       return (
                         <div key={p.nama} className="space-y-1">
                           <div className="flex justify-between text-[12px]">
-                            <span className="font-semibold text-ink truncate max-w-[120px]">
+                            <Link
+                              href={`/owner/penjahit/${p.userId}`}
+                              className="font-semibold text-ink truncate max-w-[120px] hover:text-forest-900 hover:underline block"
+                            >
                               {p.nama}
-                            </span>
+                            </Link>
                             <span className="font-medium text-forest-900 tabular-nums">
                               {formatRupiah(p.upah)} ({p.pcs} pcs)
                             </span>
@@ -1106,9 +1110,12 @@ export default async function OwnerDashboardPage({
                       return (
                         <div key={p.nama} className="space-y-1">
                           <div className="flex justify-between text-[12px]">
-                            <span className="font-semibold text-ink truncate max-w-[120px]">
+                            <Link
+                              href={`/owner/penjahit/${p.userId}`}
+                              className="font-semibold text-ink truncate max-w-[120px] hover:text-forest-900 hover:underline block"
+                            >
                               {p.nama}
-                            </span>
+                            </Link>
                             <span className="font-medium text-forest-900 tabular-nums">
                               {formatRupiah(p.upah)} ({p.pcs} pcs)
                             </span>
@@ -1247,7 +1254,12 @@ export default async function OwnerDashboardPage({
                           )}
                         </td>
                         <td className="py-3 px-3 font-semibold text-ink">
-                          {row.nama_penjahit}
+                          <Link
+                            href={`/owner/penjahit/${row.user_id}`}
+                            className="hover:text-forest-900 hover:underline"
+                          >
+                            {row.nama_penjahit}
+                          </Link>
                         </td>
                         <td className="py-3 px-3 text-right font-semibold text-ink tabular-nums">
                           {formatNumber(row.total_pcs_disetujui)} pcs

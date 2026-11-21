@@ -8,6 +8,7 @@ function revalidateWagePaths() {
   revalidatePath("/owner/rekap");
   revalidatePath("/owner/dashboard");
   revalidatePath("/owner/approval");
+  revalidatePath("/owner/penjahit");
   revalidatePath("/penjahit/beranda");
   revalidatePath("/penjahit/riwayat");
 }

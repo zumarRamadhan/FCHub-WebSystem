@@ -212,3 +212,60 @@ export interface WageStatusView {
   dibayar_oleh_nama: string | null;
   total_transaksi_bayar: number;
 }
+
+/**
+ * View: public.v_tailor_summary (Tahap 14)
+ */
+export interface TailorSummaryView {
+  user_id: string;
+  nama_penjahit: string;
+  username_penjahit: string;
+  aktif: boolean;
+  created_at: string;
+  total_pcs_seumur_hidup: number;
+  total_pendapatan_seumur_hidup: number;
+  total_proyek_dikerjakan: number;
+  total_hari_kerja: number;
+  rata_rata_pcs_per_hari: number;
+  total_sudah_dibayar: number;
+  total_belum_dibayar: number;
+  status_bayar_minggu_ini: WeeklyWagePaymentStatus;
+  sisa_minggu_ini: number;
+  tanggal_bayar_minggu_ini: string | null;
+}
+
+/**
+ * View: public.v_tailor_projects (Tahap 14)
+ */
+export interface TailorProjectView {
+  user_id: string;
+  project_id: string;
+  nama_proyek: string;
+  status_proyek: string;
+  target_pcs: number;
+  tarif_per_pcs: number;
+  ambang_reward: number;
+  total_pcs: number;
+  total_upah: number;
+  grand_total_pcs_proyek: number;
+  persen_kontribusi: number;
+  melewati_ambang_reward: boolean;
+  tanggal_pertama_kerja: string;
+  tanggal_terakhir_kerja: string;
+  total_hari_kerja_proyek: number;
+}
+
+/**
+ * View: public.v_tailor_weekly_history (Tahap 14)
+ */
+export interface TailorWeeklyHistoryView {
+  user_id: string;
+  week_start: string;
+  week_end: string;
+  total_pcs: number;
+  total_upah: number;
+  total_dibayar: number;
+  sisa: number;
+  status_pembayaran: WeeklyWagePaymentStatus;
+  tanggal_bayar_terakhir: string | null;
+}

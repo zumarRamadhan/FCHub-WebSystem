@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import {
   Users,
   UserPlus,
@@ -8,12 +9,16 @@ import {
   Power,
   Search,
   AlertCircle,
+  ArrowRight,
   Check,
   ShieldAlert,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { formatNumber, formatRupiah } from "@/lib/format";
+import { getPaymentStatusBadgeInfo } from "@/lib/wage";
+import { WeeklyWagePaymentStatus } from "@/lib/types/database";
 import {
   createPenjahitAction,
   resetPenjahitPinAction,
@@ -27,6 +32,10 @@ export interface PenjahitItem {
   role: "penjahit" | "owner";
   aktif: boolean;
   created_at?: string;
+  total_pcs: number;
+  total_pendapatan: number;
+  total_proyek: number;
+  status_bayar_minggu_ini: WeeklyWagePaymentStatus;
 }
 
 interface PenjahitClientProps {
@@ -34,6 +43,7 @@ interface PenjahitClientProps {
 }
 
 export function PenjahitClient({ initialPenjahits }: PenjahitClientProps) {
+  const router = useRouter();
   const [penjahits, setPenjahits] = React.useState<PenjahitItem[]>(initialPenjahits);
   const [searchQuery, setSearchQuery] = React.useState("");
 
@@ -227,76 +237,118 @@ export function PenjahitClient({ initialPenjahits }: PenjahitClientProps) {
               .toUpperCase();
 
             const isToggling = toggleLoadingId === penjahit.id;
+            const badgeInfo = getPaymentStatusBadgeInfo(penjahit.status_bayar_minggu_ini);
 
             return (
               <Card
                 key={penjahit.id}
-                className={`p-4 sm:p-5 flex flex-col justify-between transition-all ${
+                onClick={() => router.push(`/owner/penjahit/${penjahit.id}`)}
+                className={`p-4 sm:p-5 flex flex-col justify-between transition-all cursor-pointer hover:border-forest-900/40 hover:shadow-md group ${
                   !penjahit.aktif ? "opacity-75 bg-surface/70" : ""
                 }`}
               >
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className={`w-11 h-11 rounded-full flex items-center justify-center text-[14px] font-semibold select-none shrink-0 ${
-                        penjahit.aktif
-                          ? "bg-forest-900 text-lime-400"
-                          : "bg-surface-muted text-muted"
-                      }`}
-                    >
-                      {initials}
+                <div>
+                  {/* Baris 1: Header Nama & Status */}
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`w-11 h-11 rounded-full flex items-center justify-center text-[14px] font-semibold select-none shrink-0 ${
+                          penjahit.aktif
+                            ? "bg-forest-900 text-lime-400"
+                            : "bg-surface-muted text-muted"
+                        }`}
+                      >
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <h2 className="text-[15px] font-semibold text-ink leading-snug truncate group-hover:text-forest-900 transition-colors">
+                          {penjahit.nama}
+                        </h2>
+                        <p className="text-[12px] font-mono text-muted truncate">
+                          @{penjahit.username}
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <h2 className="text-[15px] font-semibold text-ink leading-snug truncate">
-                        {penjahit.nama}
-                      </h2>
-                      <p className="text-[12px] font-mono text-muted truncate">
-                        @{penjahit.username}
-                      </p>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {penjahit.aktif ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-semibold">
+                          Aktif
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-pill bg-negative/10 text-negative text-[11px] font-medium">
+                          Nonaktif
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  {penjahit.aktif ? (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-semibold shrink-0">
-                      Aktif
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-pill bg-negative/10 text-negative text-[11px] font-medium shrink-0">
-                      Nonaktif
-                    </span>
-                  )}
+                  {/* Baris 2: 4 Kolom Ringkas (Pcs Seumur Hidup, Pendapatan, Proyek, Status Bayar Minggu Ini) */}
+                  <div className="grid grid-cols-2 gap-2 my-2.5 p-3 rounded-panel bg-surface-muted border border-line text-[12px]">
+                    <div>
+                      <span className="text-[11px] text-muted block">Produksi Seumur Hidup:</span>
+                      <strong className="text-ink text-[13px] font-semibold tabular-nums">
+                        {formatNumber(penjahit.total_pcs)} pcs
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-muted block">Total Pendapatan:</span>
+                      <strong className="text-forest-900 text-[13px] font-semibold tabular-nums">
+                        {formatRupiah(penjahit.total_pendapatan)}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-muted block">Proyek Dikerjakan:</span>
+                      <span className="text-ink font-medium">
+                        {penjahit.total_proyek} proyek
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-muted block">Status Minggu Ini:</span>
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-pill text-[10.5px] font-semibold ${badgeInfo.bgClass} ${badgeInfo.textClass}`}>
+                        {badgeInfo.label}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="pt-3 border-t border-line/60 flex items-center justify-end gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setResetTarget(penjahit);
-                      setNewPin("");
-                      setResetError(null);
-                      setResetSuccess(null);
-                    }}
-                    className="h-8 px-3 text-[12px]"
-                  >
-                    <KeyRound className="w-3.5 h-3.5 mr-1 text-muted" />
-                    Reset PIN
-                  </Button>
+                {/* Baris 3: Footer Aksi */}
+                <div className="pt-3 border-t border-line/60 flex items-center justify-between gap-2 mt-1">
+                  <span className="text-[12px] font-semibold text-forest-900 group-hover:underline flex items-center gap-1">
+                    Lihat Histori <ArrowRight className="w-3.5 h-3.5" />
+                  </span>
 
-                  <Button
-                    variant={penjahit.aktif ? "danger" : "secondary"}
-                    size="sm"
-                    disabled={isToggling}
-                    onClick={() => handleToggleStatus(penjahit)}
-                    className="h-8 px-3 text-[12px]"
-                  >
-                    <Power className="w-3.5 h-3.5 mr-1" />
-                    {isToggling
-                      ? "..."
-                      : penjahit.aktif
-                      ? "Nonaktifkan"
-                      : "Aktifkan"}
-                  </Button>
+                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setResetTarget(penjahit);
+                        setNewPin("");
+                        setResetError(null);
+                        setResetSuccess(null);
+                      }}
+                      className="h-8 px-2.5 text-[11.5px]"
+                    >
+                      <KeyRound className="w-3.5 h-3.5 mr-1 text-muted" />
+                      Reset PIN
+                    </Button>
+
+                    <Button
+                      variant={penjahit.aktif ? "danger" : "secondary"}
+                      size="sm"
+                      disabled={isToggling}
+                      onClick={() => handleToggleStatus(penjahit)}
+                      className="h-8 px-2.5 text-[11.5px]"
+                    >
+                      <Power className="w-3.5 h-3.5 mr-1" />
+                      {isToggling
+                        ? "..."
+                        : penjahit.aktif
+                        ? "Nonaktifkan"
+                        : "Aktifkan"}
+                    </Button>
+                  </div>
                 </div>
               </Card>
             );

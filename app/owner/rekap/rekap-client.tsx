@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
   FileSpreadsheet,
   Banknote,
@@ -554,7 +555,12 @@ export function RekapClient({
                             {idx + 1}
                           </td>
                           <td className="py-3 px-3.5 font-semibold text-ink">
-                            <div>{row.nama_penjahit}</div>
+                            <Link
+                              href={`/owner/penjahit/${row.user_id}`}
+                              className="hover:text-forest-900 hover:underline block"
+                            >
+                              {row.nama_penjahit}
+                            </Link>
                             <span className="text-[11px] text-muted font-mono font-normal">
                               @{row.username_penjahit}
                             </span>
@@ -745,9 +751,12 @@ export function RekapClient({
                         {initials}
                       </div>
                       <div className="min-w-0">
-                        <h4 className="text-[15px] font-semibold text-ink truncate leading-tight">
+                        <Link
+                          href={`/owner/penjahit/${row.user_id}`}
+                          className="text-[15px] font-semibold text-ink truncate leading-tight hover:text-forest-900 hover:underline block"
+                        >
                           {row.nama_penjahit}
-                        </h4>
+                        </Link>
                         <span className="text-[11px] text-muted font-mono">
                           @{row.username_penjahit}
                         </span>
