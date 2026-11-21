@@ -153,3 +153,164 @@ export function getRecentWeekOptions(count: number = 4): WeekOption[] {
 
   return options;
 }
+
+export interface ProjectCompletionEstimate {
+  totalQty7Hari: number;
+  jumlahHariProduksi: number;
+  rataRataHarian: number;
+  sisaTargetPcs: number;
+  hariDibutuhkan: number | null;
+  perkiraanSelesaiDate: string | null; // format YYYY-MM-DD
+  statusDeadline: "aman" | "terlambat" | "belum_cukup_data" | "tanpa_deadline" | "selesai";
+  selisihHariTerlambat: number;
+  labelStatus: string;
+}
+
+/**
+ * Menghitung perkiraan selesai proyek dan status terhadap batas waktu (deadline).
+ *
+ * Sesuai aturan:
+ * - rata-rata pcs per hari = total qty_disetujui 7 hari terakhir / jumlah hari produksi (min 1).
+ * - perkiraan selesai = tanggal hari ini + Math.ceil(sisa target / rata-rata harian).
+ * - "Belum cukup data" bila jumlah hari produksi < 2 hari dalam 7 hari terakhir.
+ * - "Aman" bila perkiraan selesai <= deadline.
+ * - "Terlambat [N] hari" bila perkiraan selesai > deadline.
+ * - Tanpa badge bila proyek tidak memiliki deadline.
+ *
+ * TODO(owner):
+ * Perhitungan estimasi ini mengasumsikan konveksi beroperasi setiap hari (7 hari seminggu).
+ * Konfirmasi apakah konveksi libur pada hari Minggu atau menerapkan 6 hari kerja,
+ * serta apakah perlu memperhitungkan hari libur nasional / cuti konveksi.
+ */
+export function estimateProjectCompletion(params: {
+  targetPcs: number;
+  totalPcsDisetujui: number;
+  deadline?: string | null;
+  todayDateStr: string; // format YYYY-MM-DD
+  entries7Hari: Array<{
+    tanggal_kerja: string;
+    qty_disetujui: number | null;
+    status: string;
+  }>;
+}): ProjectCompletionEstimate {
+  const { targetPcs, totalPcsDisetujui, deadline, todayDateStr, entries7Hari } = params;
+
+  // 1. Filter entri yang disetujui dalam 7 hari terakhir
+  const approved7Hari = entries7Hari.filter(
+    (e) => e.status === "disetujui" && (e.qty_disetujui ?? 0) > 0
+  );
+
+  // 2. Hitung total pcs dan jumlah hari produksi unik
+  const totalQty7Hari = approved7Hari.reduce((sum, e) => sum + (e.qty_disetujui ?? 0), 0);
+  const distinctDays = new Set(approved7Hari.map((e) => e.tanggal_kerja));
+  const jumlahHariProduksi = distinctDays.size;
+
+  const sisaTargetPcs = Math.max(0, targetPcs - totalPcsDisetujui);
+
+  // Jika target sudah tercapai
+  if (sisaTargetPcs === 0) {
+    return {
+      totalQty7Hari,
+      jumlahHariProduksi,
+      rataRataHarian: jumlahHariProduksi > 0 ? Math.round(totalQty7Hari / jumlahHariProduksi) : 0,
+      sisaTargetPcs: 0,
+      hariDibutuhkan: 0,
+      perkiraanSelesaiDate: todayDateStr,
+      statusDeadline: "selesai",
+      selisihHariTerlambat: 0,
+      labelStatus: "Selesai",
+    };
+  }
+
+  // Jika hari produksi kurang dari 2 hari
+  if (jumlahHariProduksi < 2) {
+    return {
+      totalQty7Hari,
+      jumlahHariProduksi,
+      rataRataHarian: jumlahHariProduksi === 1 ? totalQty7Hari : 0,
+      sisaTargetPcs,
+      hariDibutuhkan: null,
+      perkiraanSelesaiDate: null,
+      statusDeadline: "belum_cukup_data",
+      selisihHariTerlambat: 0,
+      labelStatus: "Belum cukup data",
+    };
+  }
+
+  // 3. Rata-rata harian = total pcs 7 hari / jumlah hari produksi (dibulatkan ke bilangan bulat terdekat)
+  const rataRataHarian = Math.round(totalQty7Hari / Math.max(1, jumlahHariProduksi));
+
+  if (rataRataHarian <= 0) {
+    return {
+      totalQty7Hari,
+      jumlahHariProduksi,
+      rataRataHarian: 0,
+      sisaTargetPcs,
+      hariDibutuhkan: null,
+      perkiraanSelesaiDate: null,
+      statusDeadline: "belum_cukup_data",
+      selisihHariTerlambat: 0,
+      labelStatus: "Belum cukup data",
+    };
+  }
+
+  // 4. Hari dibutuhkan = sisa target / rata-rata harian, dibulatkan ke atas
+  const hariDibutuhkan = Math.ceil(sisaTargetPcs / rataRataHarian);
+
+  // 5. Perkiraan selesai = tanggal hari ini + hari dibutuhkan
+  const [year, month, day] = todayDateStr.split("-").map(Number);
+  const finishDateObj = new Date(year, month - 1, day + hariDibutuhkan);
+  const fYear = finishDateObj.getFullYear();
+  const fMonth = String(finishDateObj.getMonth() + 1).padStart(2, "0");
+  const fDay = String(finishDateObj.getDate()).padStart(2, "0");
+  const perkiraanSelesaiDate = `${fYear}-${fMonth}-${fDay}`;
+
+  // 6. Evaluasi terhadap deadline bila ada
+  if (!deadline) {
+    return {
+      totalQty7Hari,
+      jumlahHariProduksi,
+      rataRataHarian,
+      sisaTargetPcs,
+      hariDibutuhkan,
+      perkiraanSelesaiDate,
+      statusDeadline: "tanpa_deadline",
+      selisihHariTerlambat: 0,
+      labelStatus: "-",
+    };
+  }
+
+  const cleanDeadlineStr = deadline.includes("T") ? deadline.split("T")[0] : deadline;
+  const [dYear, dMonth, dDay] = cleanDeadlineStr.split("-").map(Number);
+  const deadlineObj = new Date(dYear, dMonth - 1, dDay);
+
+  // Hitung selisih hari: finishDateObj - deadlineObj
+  const diffMs = finishDateObj.getTime() - deadlineObj.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 0) {
+    return {
+      totalQty7Hari,
+      jumlahHariProduksi,
+      rataRataHarian,
+      sisaTargetPcs,
+      hariDibutuhkan,
+      perkiraanSelesaiDate,
+      statusDeadline: "aman",
+      selisihHariTerlambat: 0,
+      labelStatus: "Aman",
+    };
+  } else {
+    return {
+      totalQty7Hari,
+      jumlahHariProduksi,
+      rataRataHarian,
+      sisaTargetPcs,
+      hariDibutuhkan,
+      perkiraanSelesaiDate,
+      statusDeadline: "terlambat",
+      selisihHariTerlambat: diffDays,
+      labelStatus: `Terlambat ${diffDays} hari`,
+    };
+  }
+}

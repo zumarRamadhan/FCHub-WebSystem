@@ -18,14 +18,23 @@ import { Button } from "@/components/ui/button";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { RingProgress } from "@/components/ui/ring-progress";
 import { createClient } from "@/lib/supabase/server";
-import { formatNumber, formatRupiah, formatDateId } from "@/lib/format";
+import {
+  formatNumber,
+  formatRupiah,
+  formatDateId,
+  getJakartaTodayString,
+} from "@/lib/format";
 import {
   getWeekDateRange,
   calculateEntryWage,
   calculateTotalWage,
   calculateTotalApprovedPcs,
+  estimateProjectCompletion,
+  ProjectCompletionEstimate,
 } from "@/lib/wage";
 import { EntryStatus } from "@/lib/types/database";
+import { DailyProductionChart, DailyProductionItem } from "@/components/dashboard/daily-production-chart";
+import { BelumInputCard, TailorItem } from "@/components/dashboard/belum-input-card";
 
 interface ProjectProgressRow {
   project_id: string;
@@ -87,6 +96,44 @@ function getDeadlineStatus(deadlineStr: string) {
   } else {
     return { label: `${diffDays} hari lagi`, isLate: false };
   }
+}
+
+function renderDeadlineBadge(estimate?: ProjectCompletionEstimate) {
+  if (!estimate || estimate.statusDeadline === "tanpa_deadline") return null;
+
+  if (estimate.statusDeadline === "selesai") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-bold">
+        <CheckCircle2 className="w-3 h-3" /> Target Tercapai
+      </span>
+    );
+  }
+
+  if (estimate.statusDeadline === "aman") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-bold">
+        <CheckCircle2 className="w-3 h-3" /> Aman
+      </span>
+    );
+  }
+
+  if (estimate.statusDeadline === "terlambat") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-pill bg-red-100 text-negative text-[11px] font-bold">
+        <Clock className="w-3 h-3" /> Terlambat {estimate.selisihHariTerlambat} hr
+      </span>
+    );
+  }
+
+  if (estimate.statusDeadline === "belum_cukup_data") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-pill bg-surface-muted border border-line text-muted text-[11px] font-medium">
+        <Clock className="w-3 h-3 opacity-60" /> Belum cukup data
+      </span>
+    );
+  }
+
+  return null;
 }
 
 export default async function OwnerDashboardPage({
@@ -252,6 +299,106 @@ export default async function OwnerDashboardPage({
       }));
     }
   }
+
+  // 6. Tanggal Hari Ini & Kemarin (Asia/Jakarta) dan Rentang 7 Hari Terakhir
+  const todayDateStr = getJakartaTodayString();
+  const [ty, tm, td] = todayDateStr.split("-").map(Number);
+
+  const yesterdayDateObj = new Date(ty, tm - 1, td - 1);
+  const yYear = yesterdayDateObj.getFullYear();
+  const yMonth = String(yesterdayDateObj.getMonth() + 1).padStart(2, "0");
+  const yDay = String(yesterdayDateObj.getDate()).padStart(2, "0");
+  const yesterdayDateStr = `${yYear}-${yMonth}-${yDay}`;
+
+  const last7DaysList: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(ty, tm - 1, td - i);
+    const yearStr = d.getFullYear();
+    const monthStr = String(d.getMonth() + 1).padStart(2, "0");
+    const dayStr = String(d.getDate()).padStart(2, "0");
+    last7DaysList.push(`${yearStr}-${monthStr}-${dayStr}`);
+  }
+  const startDate7DaysStr = last7DaysList[0];
+
+  // A. Ambil entri 7 hari terakhir yang disetujui untuk estimasi & grafik bar
+  const { data: rawEntries7Hari } = await supabase
+    .from("production_entries")
+    .select("project_id, tanggal_kerja, qty_disetujui, status")
+    .eq("status", "disetujui")
+    .gte("tanggal_kerja", startDate7DaysStr)
+    .lte("tanggal_kerja", todayDateStr);
+  const entries7Hari = rawEntries7Hari || [];
+
+  // B. Ambil seluruh penjahit aktif
+  const { data: rawTailors } = await supabase
+    .from("users")
+    .select("id, nama, username")
+    .eq("role", "penjahit")
+    .eq("aktif", true)
+    .order("nama", { ascending: true });
+  const activeTailors: TailorItem[] = (rawTailors || []).map((t) => ({
+    id: t.id,
+    nama: t.nama,
+    username: t.username,
+  }));
+
+  // C. Ambil entri hari ini & kemarin (SEMUA status) untuk penentuan "Belum Input"
+  const { data: rawRecentEntriesAllStatus } = await supabase
+    .from("production_entries")
+    .select("user_id, tanggal_kerja, status")
+    .in("tanggal_kerja", [todayDateStr, yesterdayDateStr]);
+  const recentEntries = rawRecentEntriesAllStatus || [];
+
+  const todaySubmittedUserIds = Array.from(
+    new Set(
+      recentEntries
+        .filter((e) => e.tanggal_kerja === todayDateStr)
+        .map((e) => e.user_id)
+    )
+  );
+  const yesterdaySubmittedUserIds = Array.from(
+    new Set(
+      recentEntries
+        .filter((e) => e.tanggal_kerja === yesterdayDateStr)
+        .map((e) => e.user_id)
+    )
+  );
+
+  // D. Hitung estimasi selesai untuk setiap proyek aktif
+  const projectEstimatesMap: Record<string, ProjectCompletionEstimate> = {};
+  allProjects.forEach((p) => {
+    const projectEntries = entries7Hari.filter((e) => e.project_id === p.project_id);
+    projectEstimatesMap[p.project_id] = estimateProjectCompletion({
+      targetPcs: p.target_pcs,
+      totalPcsDisetujui: p.total_pcs_disetujui,
+      deadline: p.deadline,
+      todayDateStr,
+      entries7Hari: projectEntries,
+    });
+  });
+
+  // E. Siapkan data grafik 7 hari harian untuk cakupan yang dipilih
+  const dayNamesShort = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+  let chartSourceEntries = entries7Hari;
+  if (isSingleProjectView && selectedProject) {
+    chartSourceEntries = entries7Hari.filter((e) => e.project_id === selectedProject.project_id);
+  }
+  const chartData: DailyProductionItem[] = last7DaysList.map((dStr) => {
+    const [y, m, d] = dStr.split("-").map(Number);
+    const dateObj = new Date(y, m - 1, d);
+    const dayLabel = dayNamesShort[dateObj.getDay()];
+    const dateLabel = `${d}/${m}`;
+    const pcs = chartSourceEntries
+      .filter((e) => e.tanggal_kerja === dStr)
+      .reduce((sum, e) => sum + Number(e.qty_disetujui || 0), 0);
+    return {
+      date: dStr,
+      dayLabel,
+      dateLabel,
+      pcs,
+      isToday: dStr === todayDateStr,
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -446,7 +593,27 @@ export default async function OwnerDashboardPage({
             </CardAccent>
           </div>
 
-          {/* B. Grid Kartu Per Proyek Aktif */}
+          {/* B. Grafik Tren Produksi 7 Hari & Status Setoran Penjahit */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <Card className="lg:col-span-7 p-4 sm:p-5 shadow-card flex flex-col justify-between">
+              <DailyProductionChart
+                data={chartData}
+                title="Tren Produksi 7 Hari Terakhir"
+                subtitle="Akumulasi seluruh proyek (hanya entri disetujui)"
+              />
+            </Card>
+            <div className="lg:col-span-5">
+              <BelumInputCard
+                tailors={activeTailors}
+                todayDateStr={todayDateStr}
+                yesterdayDateStr={yesterdayDateStr}
+                todaySubmittedUserIds={todaySubmittedUserIds}
+                yesterdaySubmittedUserIds={yesterdaySubmittedUserIds}
+              />
+            </div>
+          </div>
+
+          {/* C. Grid Kartu Per Proyek Aktif */}
           <div>
             <div className="flex items-center justify-between mb-3.5">
               <div>
@@ -472,6 +639,7 @@ export default async function OwnerDashboardPage({
                 {activeProjects.map((p) => {
                   const pct = Math.min(100, Math.round(Number(p.persentase_progres || 0)));
                   const deadlineInfo = getDeadlineStatus(p.deadline);
+                  const estimate = projectEstimatesMap[p.project_id];
 
                   return (
                     <Link
@@ -483,12 +651,17 @@ export default async function OwnerDashboardPage({
                         <div>
                           {/* Header Kartu Proyek */}
                           <div className="flex items-start justify-between gap-2 mb-2.5">
-                            <h3 className="text-[15px] font-semibold text-ink leading-snug group-hover:text-forest-900 transition-colors">
-                              {p.nama_proyek}
-                            </h3>
-                            <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-bold">
-                              {formatRupiah(p.tarif_per_pcs)} / pcs
-                            </span>
+                            <div className="min-w-0">
+                              <h3 className="text-[15px] font-semibold text-ink leading-snug group-hover:text-forest-900 transition-colors truncate">
+                                {p.nama_proyek}
+                              </h3>
+                              <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-bold">
+                                  {formatRupiah(p.tarif_per_pcs)} / pcs
+                                </span>
+                                {renderDeadlineBadge(estimate)}
+                              </div>
+                            </div>
                           </div>
 
                           {/* Angka Progres */}
@@ -505,10 +678,26 @@ export default async function OwnerDashboardPage({
                           {/* Progress Bar */}
                           <ProgressBar value={pct} max={100} />
 
-                          {/* Deadline & Sisa Target */}
-                          <div className="mt-4 pt-3 border-t border-line/60 grid grid-cols-2 gap-2 text-[12px]">
-                            <div>
-                              <span className="text-muted block text-[11px]">Batas Waktu:</span>
+                          {/* Perkiraan Selesai & Tren 7 Hari */}
+                          <div className="mt-3.5 pt-3 border-t border-line/60 space-y-1.5 text-[12px]">
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted text-[11px]">Perkiraan Selesai:</span>
+                              <span className="font-semibold text-ink">
+                                {estimate?.perkiraanSelesaiDate
+                                  ? formatDateId(estimate.perkiraanSelesaiDate)
+                                  : "Belum cukup data"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-muted">Tren 7 Hari:</span>
+                              <span className="font-semibold text-forest-900 tabular-nums">
+                                {estimate && estimate.rataRataHarian > 0
+                                  ? `${formatNumber(estimate.rataRataHarian)} pcs/hr (${estimate.jumlahHariProduksi} hr aktif)`
+                                  : "Belum ada tren"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] pt-0.5">
+                              <span className="text-muted">Batas Waktu:</span>
                               <span
                                 className={`font-medium ${
                                   deadlineInfo.isLate ? "text-negative font-semibold" : "text-ink"
@@ -517,24 +706,26 @@ export default async function OwnerDashboardPage({
                                 {deadlineInfo.label}
                               </span>
                             </div>
-                            <div className="text-right">
-                              <span className="text-muted block text-[11px]">Antrean Input:</span>
-                              {p.total_entri_menunggu > 0 ? (
-                                <span className="inline-flex items-center gap-1 font-semibold text-[#B77407]">
-                                  <Clock className="w-3 h-3" />
-                                  {p.total_entri_menunggu} menunggu
-                                </span>
-                              ) : (
-                                <span className="text-positive font-medium">Selesai diperiksa</span>
-                              )}
-                            </div>
+                            <p className="text-[10px] text-muted/70 italic text-right pt-0.5">
+                              *Perkiraan kasar tren 7 hari
+                            </p>
                           </div>
                         </div>
 
                         {/* Footer Kartu */}
-                        <div className="mt-4 pt-2 text-right">
+                        <div className="mt-3 pt-2.5 border-t border-line/60 flex items-center justify-between text-[12px]">
+                          <div>
+                            {p.total_entri_menunggu > 0 ? (
+                              <span className="inline-flex items-center gap-1 font-semibold text-[#B77407] text-[11px]">
+                                <Clock className="w-3 h-3" />
+                                {p.total_entri_menunggu} menunggu
+                              </span>
+                            ) : (
+                              <span className="text-positive font-medium text-[11px]">Selesai diperiksa</span>
+                            )}
+                          </div>
                           <span className="text-[12px] font-semibold text-forest-900 group-hover:underline inline-flex items-center gap-1">
-                            Lihat Dashboard Proyek <ArrowRight className="w-3.5 h-3.5" />
+                            Detail Proyek <ArrowRight className="w-3.5 h-3.5" />
                           </span>
                         </div>
                       </Card>
@@ -711,9 +902,12 @@ export default async function OwnerDashboardPage({
                   title={selectedProject.nama_proyek}
                   subtitle={`Target Pesanan: ${formatNumber(selectedProject.target_pcs)} pcs`}
                   action={
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-semibold">
-                      <TrendingUp className="w-3 h-3" /> Berjalan
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-semibold">
+                        <TrendingUp className="w-3 h-3" /> Berjalan
+                      </span>
+                      {renderDeadlineBadge(projectEstimatesMap[selectedProject.project_id])}
+                    </div>
                   }
                 />
                 <div className="mt-2">
@@ -730,6 +924,40 @@ export default async function OwnerDashboardPage({
                     </strong>{" "}
                     · Deadline: {formatDateId(selectedProject.deadline)} (
                     {getDeadlineStatus(selectedProject.deadline).label})
+                  </p>
+
+                  {/* Box Perkiraan Selesai & Tren 7 Hari */}
+                  <div className="mt-3.5 p-3 sm:p-3.5 bg-surface-muted/60 rounded-card border border-line/60 grid grid-cols-1 sm:grid-cols-2 gap-3 text-[12px]">
+                    <div>
+                      <span className="text-muted block text-[11px]">Perkiraan Selesai:</span>
+                      <span className="font-bold text-ink text-[13px]">
+                        {projectEstimatesMap[selectedProject.project_id]?.perkiraanSelesaiDate
+                          ? formatDateId(
+                              projectEstimatesMap[selectedProject.project_id].perkiraanSelesaiDate!
+                            )
+                          : "Belum cukup data"}
+                      </span>
+                      <span className="text-muted block text-[11px] mt-0.5">
+                        Status: {projectEstimatesMap[selectedProject.project_id]?.labelStatus || "-"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted block text-[11px]">Tren 7 Hari Terakhir:</span>
+                      <span className="font-bold text-forest-900 text-[13px] tabular-nums">
+                        {projectEstimatesMap[selectedProject.project_id] &&
+                        projectEstimatesMap[selectedProject.project_id].rataRataHarian > 0
+                          ? `${formatNumber(
+                              projectEstimatesMap[selectedProject.project_id].rataRataHarian
+                            )} pcs / hari`
+                          : "Belum ada tren"}
+                      </span>
+                      <span className="text-muted block text-[11px] mt-0.5">
+                        {projectEstimatesMap[selectedProject.project_id]?.jumlahHariProduksi || 0} hari kerja terdeteksi
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted/80 italic mt-1.5">
+                    *Perkiraan kasar berdasarkan tren 7 hari (hanya entri disetujui).
                   </p>
                 </div>
 
@@ -800,6 +1028,26 @@ export default async function OwnerDashboardPage({
                 </Link>
               </div>
             </CardAccent>
+          </div>
+
+          {/* Tren Produksi Harian Proyek Ini + Status Setoran Penjahit */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <Card className="lg:col-span-7 p-4 sm:p-5 shadow-card flex flex-col justify-between">
+              <DailyProductionChart
+                data={chartData}
+                title={`Tren Produksi: ${selectedProject.nama_proyek}`}
+                subtitle="7 hari terakhir khusus proyek ini (hanya entri disetujui)"
+              />
+            </Card>
+            <div className="lg:col-span-5">
+              <BelumInputCard
+                tailors={activeTailors}
+                todayDateStr={todayDateStr}
+                yesterdayDateStr={yesterdayDateStr}
+                todaySubmittedUserIds={todaySubmittedUserIds}
+                yesterdaySubmittedUserIds={yesterdaySubmittedUserIds}
+              />
+            </div>
           </div>
 
           {/* Baris 2: Produksi Minggu Ini + Upah Minggu Ini + Antrean Singkat (Proyek Ini) */}
