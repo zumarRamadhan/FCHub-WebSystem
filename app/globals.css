@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f2f4ef;
+  --surface: #ffffff;
+  --surface-muted: #f6f8f3;
+  --lime-500: #b6f36a;
+  --lime-400: #a3e84f;
+  --lime-100: #e8fad0;
+  --forest-900: #12331c;
+  --ink: #0f1a12;
+  --muted: #7a857c;
+  --line: #e6eae3;
+  --positive: #1f9d55;
+  --negative: #e5484d;
+  --warning: #f5a524;
+  --radius-card: 24px;
+  --radius-panel: 16px;
+  --radius-control: 14px;
+  --radius-pill: 9999px;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
