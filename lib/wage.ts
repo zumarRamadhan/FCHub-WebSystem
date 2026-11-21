@@ -13,7 +13,7 @@
  *    dikonfigurasi di konstanta terpusat di sini.
  */
 
-import { DbProductionEntry } from "./types/database";
+import { DbProductionEntry, WeeklyWagePaymentStatus } from "./types/database";
 
 /**
  * Konfigurasi Siklus Rekap Mingguan.
@@ -312,5 +312,89 @@ export function estimateProjectCompletion(params: {
       selisihHariTerlambat: diffDays,
       labelStatus: `Terlambat ${diffDays} hari`,
     };
+  }
+}
+
+/**
+ * Menentukan status pembayaran upah mingguan seorang penjahit.
+ * Aturan Bisnis #13:
+ * - 'Tanpa upah'   : upah_saat_ini = 0 dan total_dibayar = 0
+ * - 'Belum dibayar': upah_saat_ini > 0 dan total_dibayar = 0
+ * - 'Lunas'        : total_dibayar = upah_saat_ini (dan upah_saat_ini > 0)
+ * - 'Kurang bayar' : total_dibayar < upah_saat_ini (upah naik setelah dibayar)
+ * - 'Lebih bayar'  : total_dibayar > upah_saat_ini (upah turun setelah dibayar)
+ */
+export function determineWagePaymentStatus(
+  upahSaatIni: number,
+  totalDibayarAktif: number
+): WeeklyWagePaymentStatus {
+  if (upahSaatIni === 0 && totalDibayarAktif === 0) {
+    return "Tanpa upah";
+  }
+  if (totalDibayarAktif === 0) {
+    return "Belum dibayar";
+  }
+  if (totalDibayarAktif === upahSaatIni) {
+    return "Lunas";
+  }
+  if (totalDibayarAktif < upahSaatIni) {
+    return "Kurang bayar";
+  }
+  return "Lebih bayar";
+}
+
+export interface PaymentStatusBadgeInfo {
+  label: string;
+  variant: "positive" | "warning" | "negative" | "muted";
+  bgClass: string;
+  textClass: string;
+  borderClass: string;
+}
+
+export function getPaymentStatusBadgeInfo(
+  status: WeeklyWagePaymentStatus
+): PaymentStatusBadgeInfo {
+  switch (status) {
+    case "Lunas":
+      return {
+        label: "Lunas",
+        variant: "positive",
+        bgClass: "bg-lime-100",
+        textClass: "text-positive",
+        borderClass: "border-lime-300/60",
+      };
+    case "Kurang bayar":
+      return {
+        label: "Kurang bayar",
+        variant: "warning",
+        bgClass: "bg-warning/15",
+        textClass: "text-[#B77407]",
+        borderClass: "border-warning/30",
+      };
+    case "Lebih bayar":
+      return {
+        label: "Lebih bayar",
+        variant: "negative",
+        bgClass: "bg-negative/15",
+        textClass: "text-negative",
+        borderClass: "border-negative/30",
+      };
+    case "Belum dibayar":
+      return {
+        label: "Belum dibayar",
+        variant: "muted",
+        bgClass: "bg-surface-muted",
+        textClass: "text-muted",
+        borderClass: "border-line",
+      };
+    case "Tanpa upah":
+    default:
+      return {
+        label: "Tanpa upah",
+        variant: "muted",
+        bgClass: "bg-surface-muted/60",
+        textClass: "text-muted/60",
+        borderClass: "border-line/40",
+      };
   }
 }

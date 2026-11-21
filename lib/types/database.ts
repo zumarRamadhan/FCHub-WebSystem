@@ -146,3 +146,69 @@ export interface WeeklyWageView {
   total_upah: number;
   total_entri_disetujui: number;
 }
+
+/**
+ * Tabel: public.wage_payments (Catatan Pembayaran Tunai Mingguan)
+ */
+export type WagePaymentStatus = "dibayar" | "dibatalkan";
+
+export interface WagePaymentProjectDetail {
+  project_id: string;
+  nama_proyek: string;
+  tarif_snapshot: number;
+  total_pcs: number;
+  subtotal: number;
+}
+
+export interface DbWagePayment {
+  id: string;
+  user_id: string;
+  periode_mulai: string; // YYYY-MM-DD
+  periode_selesai: string; // YYYY-MM-DD
+  total_pcs: number;
+  jumlah: number;
+  rincian: WagePaymentProjectDetail[];
+  status: WagePaymentStatus;
+  catatan: string | null;
+  dibayar_oleh: string;
+  dibayar_pada: string;
+  dibatalkan_oleh: string | null;
+  dibatalkan_pada: string | null;
+  alasan_batal: string | null;
+  created_at: string;
+}
+
+/**
+ * Status Pembayaran Upah Mingguan per Penjahit
+ * Aturan Bisnis #13:
+ * - 'Tanpa upah'   : upah_saat_ini = 0 dan total_dibayar = 0
+ * - 'Belum dibayar': upah_saat_ini > 0 dan total_dibayar = 0
+ * - 'Lunas'        : total_dibayar = upah_saat_ini
+ * - 'Kurang bayar' : total_dibayar < upah_saat_ini (upah naik setelah dibayar)
+ * - 'Lebih bayar'  : total_dibayar > upah_saat_ini (upah turun setelah dibayar)
+ */
+export type WeeklyWagePaymentStatus =
+  | "Belum dibayar"
+  | "Lunas"
+  | "Kurang bayar"
+  | "Lebih bayar"
+  | "Tanpa upah";
+
+/**
+ * View: public.v_wage_status
+ */
+export interface WageStatusView {
+  user_id: string;
+  nama_penjahit: string;
+  username_penjahit: string;
+  week_start: string; // YYYY-MM-DD
+  week_end: string; // YYYY-MM-DD
+  total_pcs_saat_ini: number;
+  upah_saat_ini: number;
+  total_dibayar: number;
+  sisa: number;
+  status_pembayaran: WeeklyWagePaymentStatus;
+  tanggal_bayar_terakhir: string | null;
+  dibayar_oleh_nama: string | null;
+  total_transaksi_bayar: number;
+}

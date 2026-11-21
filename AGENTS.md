@@ -10,17 +10,17 @@ Panduan untuk agen AI (Claude Code, Cursor, Copilot, dll.) yang mengerjakan repo
 
 - 15-18 penjahit, target 100 pcs per penjahit per hari.
 - Proyek dari instansi bisa sampai 16.000 pcs dalam 1 bulan.
-- Upah borongan per pcs (kira-kira Rp500), dibayar **tunai** tiap Sabtu. Sistem **hanya menghitung**, tidak memproses pembayaran.
+- Upah borongan per pcs (kira-kira Rp500), dibayar **tunai** tiap Sabtu. Sistem **menghitung dan mencatat status bayar tunai**, tidak memproses pembayaran (tanpa transfer atau e-wallet).
 - Masalah yang diselesaikan: buku catatan ganda (penjahit dan owner) dan rekap upah manual tiap Sabtu.
 
 **Dua peran:**
 
 | Peran | Akses |
 | --- | --- |
-| `owner` | Admin penuh: proyek, penjahit, approval, rekap upah, leaderboard |
-| `penjahit` | Hanya data sendiri: input, riwayat, ringkasan minggu, leaderboard proyek |
+| `owner` | Admin penuh: proyek, penjahit, approval, rekap upah & status bayar tunai, leaderboard |
+| `penjahit` | Hanya data sendiri: input, riwayat, ringkasan minggu & status bayar, leaderboard proyek |
 
-**Alur inti:** penjahit input malam hari → owner approve keesokan hari → sistem hitung upah mingguan, progres proyek, leaderboard.
+**Alur inti:** penjahit input malam hari → owner approve keesokan hari → sistem hitung upah mingguan, progres proyek, leaderboard, dan pencatatan status bayar tunai Sabtu.
 
 **Target saat ini:** demo hari Senin 23 November 2026. Kerjakan alur inti dulu (lihat bagian 9).
 
@@ -84,13 +84,14 @@ Sebelum menyatakan pekerjaan selesai: `lint`, `typecheck`, dan `build` harus lol
 
 ## 5. Model data
 
-Tiga tabel utama. Rekap upah, progres proyek, dan leaderboard **dihitung dari `production_entries`**, tidak disimpan sebagai tabel terpisah.
+Empat tabel utama. Rekap upah, progres proyek, dan leaderboard **dihitung dari `production_entries`**, sedangkan status dan riwayat pembayaran tunai mingguan dicatat di `wage_payments`.
 
 | Tabel | Field utama |
 | --- | --- |
 | `users` | `id`, `nama`, `username`, `role` (`owner` / `penjahit`), `aktif` |
 | `projects` | `id`, `nama`, `target_pcs`, `tarif_per_pcs`, `ambang_reward`, `tanggal_mulai`, `deadline`, `status` |
 | `production_entries` | `id`, `user_id`, `project_id`, `tanggal_kerja`, `qty`, `qty_disetujui`, `tarif_snapshot`, `status` (`menunggu` / `disetujui` / `ditolak`), `catatan_owner`, `disetujui_oleh`, `disetujui_pada`, `dibuat_pada` |
+| `wage_payments` | `id`, `user_id`, `periode_mulai`, `periode_selesai`, `total_pcs`, `jumlah`, `rincian` (jsonb), `status` (`dibayar` / `dibatalkan`), `catatan`, `dibayar_oleh`, `dibayar_pada`, `dibatalkan_oleh`, `dibatalkan_pada`, `alasan_batal` |
 
 Catatan:
 
@@ -114,6 +115,11 @@ Aturan ini adalah inti sistem. Jangan dilanggar atau diubah tanpa persetujuan ek
 8. **Penjahit hanya melihat data miliknya sendiri.** Leaderboard hanya menampilkan nama dan total pcs disetujui.
 9. **Penanda reward**: muncul bila total `qty_disetujui` seorang penjahit pada satu proyek mencapai `ambang_reward`. Pemberian reward adalah keputusan owner; sistem hanya menandai.
 10. **Rekap mingguan** dihitung dari `tanggal_kerja`. Batas awal dan akhir minggu belum dikonfirmasi ke owner; jadikan konfigurasi di satu tempat (konstanta atau pengaturan), jangan di-hardcode tersebar.
+11. **Pembayaran dicatat sebagai riwayat di tabel `wage_payments`**. Tidak boleh di-update atau di-delete langsung; pembatalan hanya lewat fungsi dengan alasan wajib, dan catatannya tetap ada (status `'dibatalkan'`).
+12. **Setiap pembayaran menyimpan salinan angka saat dibayar**: `total_pcs`, `jumlah` (rupiah), dan `rincian` per proyek (`jsonb`). Angka ini tidak berubah walau entri dikoreksi kemudian.
+13. **Status minggu per penjahit** dihitung dengan membandingkan `upah_saat_ini` (dari entri disetujui, `qty_disetujui × tarif_snapshot`) dengan total pembayaran aktif (`status = 'dibayar'`): `Belum dibayar`, `Lunas`, `Kurang bayar` (upah naik setelah dibayar), `Lebih bayar` (upah turun setelah dibayar), `Tanpa upah`.
+14. **"Tandai dibayar" membayar SISA** (`upah_saat_ini` dikurangi total pembayaran aktif), hanya bila sisa > 0, dieksekusi atomik di database dengan advisory lock (`pg_advisory_xact_lock`) agar klik ganda atau dua owner tidak membuat catatan ganda. Tidak ada pembayaran dengan nominal bebas.
+15. **Hanya owner yang boleh membuat atau membatalkan pembayaran**; penjahit hanya boleh melihat catatan miliknya.
 
 Pertanyaan yang masih terbuka (jangan berasumsi di kode tanpa menandainya dengan `TODO(owner)`): apakah ada tahap kerja dengan tarif berbeda, apakah tarif sama untuk semua penjahit dalam satu proyek, apakah satu penjahit boleh input lebih dari sekali sehari.
 
@@ -162,7 +168,9 @@ Pertanyaan yang masih terbuka (jangan berasumsi di kode tanpa menandainya dengan
 
 **Setelah demo:** cetak slip dan export Excel/PDF, riwayat perubahan lengkap, PWA, mode offline.
 
-**Di luar scope:** pembayaran upah, absensi, stok bahan, keuangan konveksi, multi-owner, aplikasi native.
+**Pencatatan status pembayaran:** pencatatan tanda bayar tunai Sabtu, deteksi lunas/kurang/lebih bayar, dan riwayat pembatalan masuk dalam scope sistem FCHub.
+
+**Di luar scope:** pemrosesan pembayaran otomatis/elektronik (transfer bank, payment gateway, e-wallet; pembayaran tetap dilakukan secara tunai di luar sistem), absensi, stok bahan, keuangan konveksi, multi-owner, aplikasi native.
 
 Jangan membangun fitur di luar daftar ini tanpa diminta.
 

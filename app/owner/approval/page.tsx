@@ -41,6 +41,18 @@ export default async function OwnerApprovalPage({
     .order("status", { ascending: true })
     .order("nama", { ascending: true });
 
+  // 3. Ambil pembayaran aktif untuk mendeteksi entri yang berada di minggu yang sudah dibayar
+  const { data: rawActivePayments } = await supabase
+    .from("wage_payments")
+    .select("user_id, periode_mulai, periode_selesai")
+    .eq("status", "dibayar");
+
+  const activePayments = (rawActivePayments || []) as Array<{
+    user_id: string;
+    periode_mulai: string;
+    periode_selesai: string;
+  }>;
+
   interface RawApprovalRow {
     id: string;
     user_id: string;
@@ -56,18 +68,29 @@ export default async function OwnerApprovalPage({
 
   const entries: ApprovalEntryItem[] = (
     (rawEntries as unknown as RawApprovalRow[]) || []
-  ).map((e) => ({
-    id: e.id,
-    user_id: e.user_id,
-    nama_penjahit: e.users?.nama || "Penjahit",
-    username_penjahit: e.users?.username || "penjahit",
-    project_id: e.project_id,
-    nama_proyek: e.projects?.nama || "Proyek Konveksi",
-    tarif_per_pcs: Number(e.tarif_snapshot || e.projects?.tarif_per_pcs || 500),
-    tanggal_kerja: e.tanggal_kerja,
-    qty: Number(e.qty),
-    dibuat_pada: e.dibuat_pada,
-  }));
+  ).map((e) => {
+    // Cek apakah tanggal_kerja jatuh pada periode pembayaran aktif penjahit ini
+    const hasActivePayment = activePayments.some(
+      (ap) =>
+        ap.user_id === e.user_id &&
+        e.tanggal_kerja >= ap.periode_mulai &&
+        e.tanggal_kerja <= ap.periode_selesai
+    );
+
+    return {
+      id: e.id,
+      user_id: e.user_id,
+      nama_penjahit: e.users?.nama || "Penjahit",
+      username_penjahit: e.users?.username || "penjahit",
+      project_id: e.project_id,
+      nama_proyek: e.projects?.nama || "Proyek Konveksi",
+      tarif_per_pcs: Number(e.tarif_snapshot || e.projects?.tarif_per_pcs || 500),
+      tanggal_kerja: e.tanggal_kerja,
+      qty: Number(e.qty),
+      dibuat_pada: e.dibuat_pada,
+      has_active_payment: hasActivePayment,
+    };
+  });
 
   const availableProjects = (rawProjects || []).map((p) => ({
     id: p.id,

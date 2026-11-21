@@ -18,6 +18,7 @@ export default async function PenjahitBerandaPage() {
         upahMingguIni={0}
         pcsHariIni={0}
         targetHariIni={100}
+        paymentInfo={{ isPaid: false }}
         recentEntries={[]}
       />
     );
@@ -43,6 +44,29 @@ export default async function PenjahitBerandaPage() {
     pcsDisetujuiMingguIni += qty;
     upahMingguIni += calculateEntryWage("disetujui", qty, Number(e.tarif_snapshot || 500));
   });
+
+  // 2b. Query status pembayaran tunai minggu berjalan dari wage_payments
+  let paymentInfo: { isPaid: boolean; paidAt?: string } = { isPaid: false };
+  try {
+    const { data: payments } = await supabase
+      .from("wage_payments")
+      .select("id, status, dibayar_pada")
+      .eq("user_id", user.id)
+      .eq("periode_mulai", startDate)
+      .eq("status", "dibayar")
+      .order("dibayar_pada", { ascending: false })
+      .limit(1);
+
+    if (payments && payments.length > 0) {
+      paymentInfo = {
+        isPaid: true,
+        paidAt: payments[0].dibayar_pada,
+      };
+    }
+  } catch {
+    // fallback bila tabel belum dimigrasi di live Supabase
+    paymentInfo = { isPaid: false };
+  }
 
   // 3. Query entri hari ini (untuk target harian 100 pcs)
   const { data: todayEntries } = await supabase
@@ -105,6 +129,7 @@ export default async function PenjahitBerandaPage() {
       upahMingguIni={upahMingguIni}
       pcsHariIni={pcsHariIni}
       targetHariIni={100}
+      paymentInfo={paymentInfo}
       recentEntries={recentEntries}
     />
   );

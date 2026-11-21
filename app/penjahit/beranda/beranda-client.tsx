@@ -8,6 +8,8 @@ import {
   TrendingUp,
   ArrowRight,
   Plus,
+  CheckCircle2,
+  Clock,
 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +22,10 @@ export interface BerandaProps {
   upahMingguIni: number;
   pcsHariIni: number;
   targetHariIni: number;
+  paymentInfo?: {
+    isPaid: boolean;
+    paidAt?: string;
+  };
   recentEntries: Array<{
     id: string;
     tanggal_kerja: string;
@@ -36,6 +42,7 @@ export function BerandaClient({
   upahMingguIni,
   pcsHariIni,
   targetHariIni = 100,
+  paymentInfo,
   recentEntries,
 }: BerandaProps) {
   const percentageHariIni = Math.min(100, Math.round((pcsHariIni / targetHariIni) * 100));
@@ -61,12 +68,27 @@ export function BerandaClient({
               {formatNumber(pcsDisetujuiMingguIni)}{" "}
               <span className="text-[18px] sm:text-[20px] font-normal text-muted">pcs</span>
             </div>
-            <p className="text-[13px] text-muted mt-2">
-              Estimasi Upah:{" "}
-              <strong className="text-forest-900 font-semibold text-[16px] tabular-nums">
-                {formatRupiah(upahMingguIni)}
-              </strong>
-            </p>
+            <div className="flex flex-wrap items-center gap-y-2 gap-x-3 mt-2">
+              <p className="text-[13px] text-muted">
+                Estimasi Upah:{" "}
+                <strong className="text-forest-900 font-semibold text-[16px] tabular-nums">
+                  {formatRupiah(upahMingguIni)}
+                </strong>
+              </p>
+
+              {/* Badge Status Pembayaran Tunai (Tahap 13) */}
+              {paymentInfo?.isPaid ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-pill bg-positive/10 text-positive text-[12px] font-semibold border border-positive/20">
+                  <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                  Upah minggu ini: Sudah dibayar ({paymentInfo.paidAt ? formatDateId(paymentInfo.paidAt) : "Sabtu"})
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-pill bg-warning/10 text-warning text-[12px] font-semibold border border-warning/20">
+                  <Clock className="w-3.5 h-3.5 stroke-[2]" />
+                  Upah minggu ini: Belum dibayar
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

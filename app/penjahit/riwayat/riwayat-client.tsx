@@ -9,6 +9,8 @@ import {
   Calendar,
   Layers,
   MessageSquare,
+  CheckCircle2,
+  Banknote,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,9 +35,17 @@ export interface PenjahitHistoryEntry {
 
 interface RiwayatClientProps {
   initialEntries: PenjahitHistoryEntry[];
+  weekSummary?: {
+    pcs: number;
+    upah: number;
+    isPaid: boolean;
+    paidAt?: string;
+    startDate: string;
+    endDate: string;
+  };
 }
 
-export function RiwayatClient({ initialEntries }: RiwayatClientProps) {
+export function RiwayatClient({ initialEntries, weekSummary }: RiwayatClientProps) {
   const [entries, setEntries] = React.useState<PenjahitHistoryEntry[]>(initialEntries);
   const [filterStatus, setFilterStatus] = React.useState<string>("semua");
 
@@ -127,6 +137,42 @@ export function RiwayatClient({ initialEntries }: RiwayatClientProps) {
           </p>
         </div>
       </div>
+
+      {/* Kartu Ringkasan Status Upah Minggu Berjalan (Tahap 13) */}
+      {weekSummary && (
+        <Card className="p-4 sm:p-5 shadow-card bg-surface">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                <Banknote className="w-3.5 h-3.5 text-forest-900" />
+                <span>Ringkasan Minggu Ini ({formatDateId(weekSummary.startDate)} - {formatDateId(weekSummary.endDate)})</span>
+              </div>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-[18px] font-semibold text-ink tabular-nums">
+                  {formatNumber(weekSummary.pcs)} pcs
+                </span>
+                <span className="text-[13px] text-muted">
+                  ({formatRupiah(weekSummary.upah)})
+                </span>
+              </div>
+            </div>
+
+            <div>
+              {weekSummary.isPaid ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-positive/10 text-positive text-[12px] font-semibold border border-positive/20">
+                  <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                  Upah minggu ini: Sudah dibayar ({weekSummary.paidAt ? formatDateId(weekSummary.paidAt) : "Sabtu"})
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-warning/10 text-warning text-[12px] font-semibold border border-warning/20">
+                  <Clock className="w-3.5 h-3.5 stroke-[2]" />
+                  Upah minggu ini: Belum dibayar
+                </span>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Filter Status */}
       <div className="overflow-x-auto pb-1">

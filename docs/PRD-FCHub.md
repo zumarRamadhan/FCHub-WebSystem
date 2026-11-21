@@ -49,6 +49,7 @@ Versi demo hari Senin hanya memuat alur inti: input, approval, rekap upah, dan l
 - Input hasil kerja harian oleh penjahit
 - Approval harian oleh owner
 - Rekap upah mingguan
+- Pencatatan status pembayaran upah mingguan (Belum dibayar, Lunas, Kurang bayar, Lebih bayar, Tanpa upah)
 - Progres proyek dan leaderboard
 
 ### Setelah demo (versi pakai)
@@ -59,7 +60,7 @@ Versi demo hari Senin hanya memuat alur inti: input, approval, rekap upah, dan l
 - Mode offline bila sinyal di konveksi tidak stabil
 
 ### Tidak masuk
-- Pembayaran upah (tetap tunai, di luar sistem)
+- Pemrosesan pembayaran elektronik (transfer bank, payment gateway, e-wallet; pembayaran upah tetap dilakukan tunai di luar sistem)
 - Absensi kehadiran, stok bahan, dan keuangan konveksi
 - Banyak owner atau banyak cabang
 - Aplikasi native Android atau iOS
@@ -80,6 +81,7 @@ Penjahit mengakses FCHub dari HP, jadi seluruh fitur dirancang untuk layar kecil
 | P5 | Ubah atau hapus input selama masih berstatus Menunggu | Demo |
 | P6 | Ringkasan minggu berjalan: total pcs disetujui dan estimasi upah | Demo |
 | P7 | Leaderboard proyek: peringkat dan total pcs disetujui | Demo |
+| P8 | Melihat status pembayaran upah mingguan (Belum dibayar / Sudah dibayar beserta tanggal pembayaran) di Beranda dan Riwayat | Demo |
 
 ## Kebutuhan fungsional: Owner
 Owner memakai FCHub terutama untuk approval harian dan rekap upah mingguan.
@@ -96,6 +98,7 @@ Owner memakai FCHub terutama untuk approval harian dan rekap upah mingguan.
 | O8 | Leaderboard proyek dengan penanda penjahit yang sudah melewati ambang reward | Demo |
 | O9 | Cetak slip upah dan export rekap ke Excel atau PDF | Setelah demo |
 | O10 | Riwayat perubahan lengkap: siapa mengubah apa dan kapan | Setelah demo |
+| O11 | Pencatatan status pembayaran tunai mingguan: tandai lunas (atomik dengan advisory lock), rincian snapshot per proyek, serta pembatalan dengan alasan wajib | Demo |
 
 ## Aturan bisnis
 Aturan berikut menggantikan fungsi buku owner dan mencegah sengketa upah.
@@ -107,15 +110,21 @@ Aturan berikut menggantikan fungsi buku owner dan mencegah sengketa upah.
 - Penjahit hanya melihat data miliknya sendiri; leaderboard hanya menampilkan nama dan total pcs.
 - Penanda reward muncul saat total pcs disetujui seorang penjahit pada satu proyek mencapai ambang. Pemberian reward tetap keputusan owner.
 - Rekap mingguan dihitung dari tanggal kerja pada input; batas awal dan akhir minggu perlu dikonfirmasi ke owner (lihat bagian Risiko).
+- Pembayaran dicatat sebagai riwayat di tabel `wage_payments`. Tidak boleh di-update atau di-delete langsung; pembatalan hanya lewat fungsi dengan alasan wajib, dan catatannya tetap ada (status 'dibatalkan').
+- Setiap pembayaran menyimpan salinan angka saat dibayar: `total_pcs`, `jumlah` (rupiah), dan `rincian` per proyek (`jsonb`). Angka ini tidak berubah walau entri dikoreksi kemudian.
+- Status minggu per penjahit dihitung dengan membandingkan `upah_saat_ini` (dari entri disetujui) dengan total pembayaran aktif: Belum dibayar, Lunas, Kurang bayar, Lebih bayar, Tanpa upah.
+- "Tandai dibayar" membayar SISA (`upah_saat_ini` - total pembayaran aktif) secara atomik dengan database advisory lock. Tidak ada pembayaran nominal bebas.
+- Hanya owner yang boleh membuat atau membatalkan pembayaran; penjahit hanya melihat status dan catatan miliknya.
 
 ## Model data
-Model data cukup tiga tabel. Rekap upah, progres proyek, dan leaderboard dihitung dari tabel input, tidak disimpan terpisah.
+Model data memiliki empat tabel utama. Rekap upah, progres proyek, dan leaderboard dihitung dari tabel input, sedangkan pembayaran tunai dicatat di tabel pembayaran.
 
 | Tabel | Field utama | Catatan |
 | --- | --- | --- |
 | users | id, nama, username, pin_hash, role (owner atau penjahit), aktif | Role menentukan hak akses |
 | projects | id, nama, target_pcs, tarif_per_pcs, ambang_reward, tanggal_mulai, deadline, status | Satu proyek bisa berjalan bersamaan dengan proyek lain |
 | production_entries | id, user_id, project_id, tanggal_kerja, qty, qty_disetujui, tarif_snapshot, status (menunggu, disetujui, ditolak), catatan_owner, disetujui_oleh, disetujui_pada, dibuat_pada | qty adalah angka dari penjahit; qty_disetujui adalah angka akhir setelah koreksi owner |
+| wage_payments | id, user_id, periode_mulai, periode_selesai, total_pcs, jumlah, rincian (jsonb), status (dibayar, dibatalkan), catatan, dibayar_oleh, dibayar_pada, dibatalkan_oleh, dibatalkan_pada, alasan_batal | Catatan pembayaran tunai mingguan dengan snapshot nilai saat dibayar |
 
 Satu penjahit punya banyak input, dan satu proyek punya banyak input. Upah dihitung dari qty_disetujui × tarif_snapshot pada input berstatus disetujui.
 

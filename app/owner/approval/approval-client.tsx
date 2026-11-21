@@ -33,6 +33,7 @@ export interface ApprovalEntryItem {
   tanggal_kerja: string;
   qty: number;
   dibuat_pada: string;
+  has_active_payment?: boolean;
 }
 
 interface ApprovalClientProps {
@@ -80,10 +81,89 @@ export function ApprovalClient({
   const [isApprovingAll, setIsApprovingAll] = React.useState(false);
   const [targetBatchDate, setTargetBatchDate] = React.useState<string | null>(null);
 
+  // Modal Peringatan: Entri Berada di Minggu yang Sudah Memiliki Pembayaran Aktif
+  const [pendingActionWithWarning, setPendingActionWithWarning] = React.useState<{
+    entry: ApprovalEntryItem;
+    type: "approve" | "reject" | "correct";
+    params?: { qty?: number; catatan?: string };
+  } | null>(null);
+
   // Tampilkan toast singkat
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Helper eksekusi persetujuan langsung
+  const executeApprove = async (entry: ApprovalEntryItem) => {
+    setProcessingId(entry.id);
+    const result = await approveEntryAction(entry.id);
+
+    if (result.success) {
+      setEntries((prev) => prev.filter((item) => item.id !== entry.id));
+      showToast(`Entri ${entry.nama_penjahit} (${entry.qty} pcs) disetujui.`);
+    }
+    setProcessingId(null);
+  };
+
+  // Helper eksekusi penolakan
+  const executeReject = async (entry: ApprovalEntryItem, catatan: string) => {
+    setIsRejecting(true);
+    setRejectError(null);
+
+    const result = await rejectEntryAction({
+      id: entry.id,
+      catatan,
+    });
+
+    if (!result.success) {
+      setRejectError(result.error || "Gagal menolak entri.");
+      setIsRejecting(false);
+      return;
+    }
+
+    setEntries((prev) => prev.filter((item) => item.id !== entry.id));
+    showToast(`Entri ${entry.nama_penjahit} ditolak.`);
+    setIsRejecting(false);
+    setRejectingItem(null);
+  };
+
+  // Helper eksekusi koreksi
+  const executeCorrect = async (entry: ApprovalEntryItem, qty: number, catatan?: string) => {
+    setIsCorrecting(true);
+    setCorrectError(null);
+
+    const result = await correctAndApproveEntryAction({
+      id: entry.id,
+      qty_disetujui: qty,
+      catatan: catatan || undefined,
+    });
+
+    if (!result.success) {
+      setCorrectError(result.error || "Gagal mengoreksi entri.");
+      setIsCorrecting(false);
+      return;
+    }
+
+    setEntries((prev) => prev.filter((item) => item.id !== entry.id));
+    showToast(`Entri dikoreksi menjadi ${qty} pcs dan disetujui.`);
+    setIsCorrecting(false);
+    setCorrectingItem(null);
+  };
+
+  // Handler Lanjut dari Dialog Peringatan
+  const handleProceedWarning = async () => {
+    if (!pendingActionWithWarning) return;
+    const { entry, type, params } = pendingActionWithWarning;
+    setPendingActionWithWarning(null);
+
+    if (type === "approve") {
+      await executeApprove(entry);
+    } else if (type === "reject") {
+      await executeReject(entry, params?.catatan || "");
+    } else if (type === "correct") {
+      await executeCorrect(entry, params?.qty || entry.qty, params?.catatan);
+    }
   };
 
   // Filter entri
@@ -118,14 +198,12 @@ export function ApprovalClient({
     e.stopPropagation(); // Mencegah terbukanya modal koreksi
     if (processingId) return;
 
-    setProcessingId(entry.id);
-    const result = await approveEntryAction(entry.id);
-
-    if (result.success) {
-      setEntries((prev) => prev.filter((item) => item.id !== entry.id));
-      showToast(`Entri ${entry.nama_penjahit} (${entry.qty} pcs) disetujui.`);
+    if (entry.has_active_payment) {
+      setPendingActionWithWarning({ entry, type: "approve" });
+      return;
     }
-    setProcessingId(null);
+
+    await executeApprove(entry);
   };
 
   // 2. Eksekusi Tolak
@@ -145,24 +223,19 @@ export function ApprovalClient({
       return;
     }
 
-    setIsRejecting(true);
-    setRejectError(null);
+    const note = rejectReason.trim();
 
-    const result = await rejectEntryAction({
-      id: rejectingItem.id,
-      catatan: rejectReason.trim(),
-    });
-
-    if (!result.success) {
-      setRejectError(result.error || "Gagal menolak entri.");
-      setIsRejecting(false);
+    if (rejectingItem.has_active_payment) {
+      setPendingActionWithWarning({
+        entry: rejectingItem,
+        type: "reject",
+        params: { catatan: note },
+      });
+      setRejectingItem(null);
       return;
     }
 
-    setEntries((prev) => prev.filter((item) => item.id !== rejectingItem.id));
-    showToast(`Entri ${rejectingItem.nama_penjahit} ditolak.`);
-    setIsRejecting(false);
-    setRejectingItem(null);
+    await executeReject(rejectingItem, note);
   };
 
   // 3. Eksekusi Koreksi Jumlah (Ketuk Baris)
@@ -177,25 +250,20 @@ export function ApprovalClient({
     e.preventDefault();
     if (!correctingItem) return;
 
-    setIsCorrecting(true);
-    setCorrectError(null);
+    const qty = Number(correctedQty);
+    const note = correctionNote.trim();
 
-    const result = await correctAndApproveEntryAction({
-      id: correctingItem.id,
-      qty_disetujui: Number(correctedQty),
-      catatan: correctionNote.trim() || undefined,
-    });
-
-    if (!result.success) {
-      setCorrectError(result.error || "Gagal mengoreksi entri.");
-      setIsCorrecting(false);
+    if (correctingItem.has_active_payment) {
+      setPendingActionWithWarning({
+        entry: correctingItem,
+        type: "correct",
+        params: { qty, catatan: note },
+      });
+      setCorrectingItem(null);
       return;
     }
 
-    setEntries((prev) => prev.filter((item) => item.id !== correctingItem.id));
-    showToast(`Entri dikoreksi menjadi ${correctedQty} pcs dan disetujui.`);
-    setIsCorrecting(false);
-    setCorrectingItem(null);
+    await executeCorrect(correctingItem, qty, note);
   };
 
   // 4. Eksekusi Setujui Semua
@@ -686,6 +754,49 @@ export function ApprovalClient({
             </Button>
           </div>
         </div>
+      </Dialog>
+
+      {/* 4. Modal Peringatan: Entri di Minggu yang Sudah Memiliki Pembayaran Aktif */}
+      <Dialog
+        isOpen={!!pendingActionWithWarning}
+        onClose={() => setPendingActionWithWarning(null)}
+        title="Peringatan: Upah Minggu Ini Sudah Dibayar"
+        subtitle="Verifikasi entri dapat menimbulkan selisih pembayaran"
+      >
+        {pendingActionWithWarning && (
+          <div className="space-y-4">
+            <div className="p-3.5 bg-warning/10 border border-warning/30 rounded-panel text-[13px] text-[#B77407] flex items-start gap-2.5">
+              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-[#B77407]" />
+              <div className="leading-relaxed">
+                <p className="font-semibold text-ink text-[14px]">
+                  Minggu ini untuk {pendingActionWithWarning.entry.nama_penjahit} sudah ditandai dibayar, perubahan akan menimbulkan selisih.
+                </p>
+                <p className="text-[12px] text-muted mt-1.5">
+                  Tindakan ini akan mempengaruhi total upah disetujui sehingga status pembayaran mingguan
+                  penjahit ini akan otomatis berubah menjadi <strong>Kurang bayar</strong> atau{" "}
+                  <strong>Lebih bayar</strong>.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-3 flex items-center justify-end gap-2 border-t border-line/60">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setPendingActionWithWarning(null)}
+              >
+                Batal
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={handleProceedWarning}
+              >
+                Lanjutkan
+              </Button>
+            </div>
+          </div>
+        )}
       </Dialog>
     </div>
   );
