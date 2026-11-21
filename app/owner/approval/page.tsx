@@ -1,8 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { ApprovalClient, ApprovalEntryItem } from "./approval-client";
 
-export default async function OwnerApprovalPage() {
+export default async function OwnerApprovalPage({
+  searchParams,
+}: {
+  searchParams?: { project?: string };
+}) {
   const supabase = createClient();
+  const initialProjectId = searchParams?.project || "all";
 
   // 1. Ambil antrean entri berstatus 'menunggu'
   const { data: rawEntries } = await supabase
@@ -73,6 +78,7 @@ export default async function OwnerApprovalPage() {
     <ApprovalClient
       initialEntries={entries}
       availableProjects={availableProjects}
+      initialProjectId={initialProjectId}
     />
   );
 }

@@ -10,6 +10,14 @@ export default function OwnerLoading() {
         <div className="h-9 w-32 bg-surface-muted rounded-control" />
       </div>
 
+      {/* Horizontal Chips Skeleton */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <div className="h-9 w-32 bg-surface-muted rounded-pill" />
+        <div className="h-9 w-36 bg-surface-muted rounded-pill" />
+        <div className="h-9 w-36 bg-surface-muted rounded-pill" />
+        <div className="h-9 w-24 bg-surface-muted rounded-pill" />
+      </div>
+
       {/* Grid Baris 1: Hero & Accent */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         <div className="lg:col-span-8 h-48 bg-surface rounded-card border border-line p-6 space-y-4">

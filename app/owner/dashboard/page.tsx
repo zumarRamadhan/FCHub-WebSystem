@@ -7,6 +7,10 @@ import {
   Sparkles,
   Trophy,
   CheckSquare,
+  Layers,
+  CheckCircle2,
+  Briefcase,
+  FolderArchive,
 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CardAccent } from "@/components/ui/card-accent";
@@ -15,76 +19,161 @@ import { ProgressBar } from "@/components/ui/progress-bar";
 import { RingProgress } from "@/components/ui/ring-progress";
 import { createClient } from "@/lib/supabase/server";
 import { formatNumber, formatRupiah, formatDateId } from "@/lib/format";
-import { getWeekDateRange } from "@/lib/wage";
+import {
+  getWeekDateRange,
+  calculateEntryWage,
+  calculateTotalWage,
+  calculateTotalApprovedPcs,
+} from "@/lib/wage";
+import { EntryStatus } from "@/lib/types/database";
 
-export default async function OwnerDashboardPage() {
+interface ProjectProgressRow {
+  project_id: string;
+  nama_proyek: string;
+  target_pcs: number;
+  tarif_per_pcs: number;
+  ambang_reward: number;
+  status_proyek: string;
+  tanggal_mulai: string;
+  deadline: string;
+  total_pcs_disetujui: number;
+  persentase_progres: number;
+  sisa_target_pcs: number;
+  total_entri_menunggu: number;
+}
+
+interface RawWeekRow {
+  id: string;
+  user_id: string;
+  project_id: string;
+  qty: number;
+  qty_disetujui: number | null;
+  tarif_snapshot: number;
+  status: EntryStatus;
+  tanggal_kerja: string;
+  users: { nama: string } | null;
+  projects: { nama: string; tarif_per_pcs: number } | null;
+}
+
+interface OwnerLeaderboardRow {
+  user_id: string;
+  nama_penjahit: string;
+  total_pcs_disetujui: number;
+  total_upah: number;
+  melewati_ambang_reward: boolean;
+}
+
+interface RawPreviewRow {
+  id: string;
+  tanggal_kerja: string;
+  qty: number;
+  users: { nama: string } | null;
+  projects: { nama: string } | null;
+}
+
+function getDeadlineStatus(deadlineStr: string) {
+  if (!deadlineStr) return { label: "-", isLate: false };
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const deadline = new Date(deadlineStr);
+  deadline.setHours(0, 0, 0, 0);
+  const diffTime = deadline.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    return { label: `Lewat ${Math.abs(diffDays)} hari`, isLate: true };
+  } else if (diffDays === 0) {
+    return { label: "Hari ini", isLate: false };
+  } else {
+    return { label: `${diffDays} hari lagi`, isLate: false };
+  }
+}
+
+export default async function OwnerDashboardPage({
+  searchParams,
+}: {
+  searchParams?: { project?: string };
+}) {
   const supabase = createClient();
   const { startDate, endDate } = getWeekDateRange();
+  const selectedProjectParam = searchParams?.project || "all";
 
-  // 1. Ambil proyek aktif utama
-  const { data: projects } = await supabase
-    .from("projects")
-    .select("id, nama, target_pcs, tarif_per_pcs, ambang_reward, deadline")
-    .eq("status", "aktif")
-    .order("created_at", { ascending: false })
-    .limit(1);
+  // 1. Ambil seluruh data progres proyek dari view v_project_progress
+  const { data: rawProjects } = await supabase
+    .from("v_project_progress")
+    .select("*")
+    .order("status_proyek", { ascending: true }) // 'aktif' first
+    .order("tanggal_mulai", { ascending: false });
 
-  const mainProject = projects?.[0];
+  const allProjects: ProjectProgressRow[] = (rawProjects || []).map((p) => ({
+    project_id: p.project_id,
+    nama_proyek: p.nama_proyek,
+    target_pcs: Number(p.target_pcs || 0),
+    tarif_per_pcs: Number(p.tarif_per_pcs || 500),
+    ambang_reward: Number(p.ambang_reward || 0),
+    status_proyek: p.status_proyek || "aktif",
+    tanggal_mulai: p.tanggal_mulai,
+    deadline: p.deadline,
+    total_pcs_disetujui: Number(p.total_pcs_disetujui || 0),
+    persentase_progres: Number(p.persentase_progres || 0),
+    sisa_target_pcs: Number(p.sisa_target_pcs || 0),
+    total_entri_menunggu: Number(p.total_entri_menunggu || 0),
+  }));
 
-  // 2. Hitung total pcs disetujui untuk proyek utama
-  let totalApprovedMain = 0;
-  if (mainProject) {
-    const { data: approvedEntries } = await supabase
-      .from("production_entries")
-      .select("qty_disetujui")
-      .eq("project_id", mainProject.id)
-      .eq("status", "disetujui");
+  const activeProjects = allProjects.filter((p) => p.status_proyek === "aktif");
+  const completedProjects = allProjects.filter((p) => p.status_proyek === "selesai");
 
-    totalApprovedMain = (approvedEntries || []).reduce(
-      (sum, e) => sum + Number(e.qty_disetujui || 0),
-      0
-    );
-  }
+  // Deteksi mode tampilan
+  const isAllProjectsView = selectedProjectParam === "all";
+  const isCompletedView = selectedProjectParam === "completed";
+  const isSingleProjectView = !isAllProjectsView && !isCompletedView;
 
-  // 3. Hitung jumlah entri yang sedang menunggu approval
-  const { count: waitingCount } = await supabase
-    .from("production_entries")
-    .select("*", { count: "exact", head: true })
-    .eq("status", "menunggu");
+  // Proyek spesifik yang dipilih (bila mode satu proyek)
+  const selectedProject = isSingleProjectView
+    ? allProjects.find((p) => p.project_id === selectedProjectParam) || activeProjects[0]
+    : null;
 
-  // 4. Hitung total pcs disetujui & upah seluruh penjahit minggu ini (Aturan Bisnis #1)
-  const { data: weekEntries } = await supabase
+  // 2. Query entri disetujui minggu ini (Aturan Bisnis #1, #2, #3: upah = qty_disetujui * tarif_snapshot)
+  let weekQuery = supabase
     .from("production_entries")
     .select(`
+      id,
       user_id,
+      project_id,
+      qty,
       qty_disetujui,
       tarif_snapshot,
+      status,
+      tanggal_kerja,
       users:users!user_id (
         nama
+      ),
+      projects (
+        nama,
+        tarif_per_pcs
       )
     `)
     .eq("status", "disetujui")
     .gte("tanggal_kerja", startDate)
     .lte("tanggal_kerja", endDate);
 
-  interface RawWeekRow {
-    user_id: string;
-    qty_disetujui: number | null;
-    tarif_snapshot: number;
-    users: { nama: string } | null;
+  if (isSingleProjectView && selectedProject) {
+    weekQuery = weekQuery.eq("project_id", selectedProject.project_id);
   }
 
-  let weekPcsTotal = 0;
-  let weekWageTotal = 0;
-  const userWeekMap: Record<string, { nama: string; pcs: number; upah: number }> = {};
+  const { data: rawWeekEntries } = await weekQuery;
+  const weekEntries = (rawWeekEntries as unknown as RawWeekRow[]) || [];
 
-  ((weekEntries as unknown as RawWeekRow[]) || []).forEach((e) => {
+  // Hitung upah dan pcs minggu ini memakai rumus terpusat di lib/wage.ts
+  const weekPcsTotal = calculateTotalApprovedPcs(weekEntries);
+  const weekWageTotal = calculateTotalWage(weekEntries);
+
+  // Agregasi top penjahit minggu ini (performa upah)
+  const userWeekMap: Record<string, { nama: string; pcs: number; upah: number }> = {};
+  weekEntries.forEach((e) => {
     const qty = Number(e.qty_disetujui || 0);
     const tarif = Number(e.tarif_snapshot || 500);
-    const wage = qty * tarif;
-
-    weekPcsTotal += qty;
-    weekWageTotal += wage;
+    const wage = calculateEntryWage(e.status, qty, tarif);
 
     if (!userWeekMap[e.user_id]) {
       userWeekMap[e.user_id] = {
@@ -97,13 +186,24 @@ export default async function OwnerDashboardPage() {
     userWeekMap[e.user_id].upah += wage;
   });
 
-  // Top penjahit minggu ini (diurutkan berdasarkan upah tertinggi)
   const topPenjahitMingguIni = Object.values(userWeekMap)
     .sort((a, b) => b.upah - a.upah)
     .slice(0, 4);
 
-  // 5. Antrean singkat (4 entri menunggu terbaru)
-  const { data: rawWaitingPreview } = await supabase
+  // 3. Query jumlah antrean approval menunggu
+  let waitingCountQuery = supabase
+    .from("production_entries")
+    .select("*", { count: "exact", head: true })
+    .eq("status", "menunggu");
+
+  if (isSingleProjectView && selectedProject) {
+    waitingCountQuery = waitingCountQuery.eq("project_id", selectedProject.project_id);
+  }
+
+  const { count: waitingCount } = await waitingCountQuery;
+
+  // 4. Query antrean singkat approval (maks 4 entri)
+  let waitingPreviewQuery = supabase
     .from("production_entries")
     .select(`
       id,
@@ -120,14 +220,11 @@ export default async function OwnerDashboardPage() {
     .order("dibuat_pada", { ascending: false })
     .limit(4);
 
-  interface RawPreviewRow {
-    id: string;
-    tanggal_kerja: string;
-    qty: number;
-    users: { nama: string } | null;
-    projects: { nama: string } | null;
+  if (isSingleProjectView && selectedProject) {
+    waitingPreviewQuery = waitingPreviewQuery.eq("project_id", selectedProject.project_id);
   }
 
+  const { data: rawWaitingPreview } = await waitingPreviewQuery;
   const waitingPreview = ((rawWaitingPreview as unknown as RawPreviewRow[]) || []).map((e) => ({
     id: e.id,
     tanggal_kerja: e.tanggal_kerja,
@@ -136,25 +233,16 @@ export default async function OwnerDashboardPage() {
     nama_proyek: e.projects?.nama || "Proyek Konveksi",
   }));
 
-  // 6. Leaderboard lengkap per proyek untuk Owner
-  interface OwnerLeaderboardRow {
-    user_id: string;
-    nama_penjahit: string;
-    total_pcs_disetujui: number;
-    total_upah: number;
-    melewati_ambang_reward: boolean;
-  }
-
+  // 5. Query Leaderboard lengkap (hanya untuk mode Satu Proyek)
   let projectLeaderboard: OwnerLeaderboardRow[] = [];
-
-  if (mainProject) {
-    const { data: lbData, error: lbError } = await supabase
+  if (isSingleProjectView && selectedProject) {
+    const { data: lbData } = await supabase
       .from("v_leaderboard")
       .select("*")
-      .eq("project_id", mainProject.id)
+      .eq("project_id", selectedProject.project_id)
       .order("total_pcs_disetujui", { ascending: false });
 
-    if (!lbError && lbData) {
+    if (lbData && lbData.length > 0) {
       projectLeaderboard = (lbData as unknown as OwnerLeaderboardRow[]).map((r) => ({
         user_id: r.user_id,
         nama_penjahit: r.nama_penjahit,
@@ -162,374 +250,879 @@ export default async function OwnerDashboardPage() {
         total_upah: Number(r.total_upah || 0),
         melewati_ambang_reward: Boolean(r.melewati_ambang_reward),
       }));
-    } else {
-      // Fallback
-      const { data: allApproved } = await supabase
-        .from("production_entries")
-        .select(`
-          user_id,
-          qty_disetujui,
-          tarif_snapshot,
-          users:users!user_id (
-            nama
-          )
-        `)
-        .eq("project_id", mainProject.id)
-        .eq("status", "disetujui");
-
-      const map: Record<string, OwnerLeaderboardRow> = {};
-      ((allApproved as unknown as RawWeekRow[]) || []).forEach((e) => {
-        const uid = e.user_id;
-        const q = Number(e.qty_disetujui || 0);
-        const t = Number(e.tarif_snapshot || 500);
-
-        if (!map[uid]) {
-          map[uid] = {
-            user_id: uid,
-            nama_penjahit: e.users?.nama || "Penjahit",
-            total_pcs_disetujui: 0,
-            total_upah: 0,
-            melewati_ambang_reward: false,
-          };
-        }
-        map[uid].total_pcs_disetujui += q;
-        map[uid].total_upah += q * t;
-        map[uid].melewati_ambang_reward =
-          mainProject.ambang_reward > 0 &&
-          map[uid].total_pcs_disetujui >= mainProject.ambang_reward;
-      });
-
-      projectLeaderboard = Object.values(map).sort(
-        (a, b) => b.total_pcs_disetujui - a.total_pcs_disetujui
-      );
     }
   }
 
-  const targetPcs = mainProject?.target_pcs || 16000;
-  const progressPercent = Math.min(
-    100,
-    Math.round((totalApprovedMain / targetPcs) * 100)
-  );
-
   return (
     <div className="space-y-6">
-      {/* 1. BARIS ATAS: Hero Progres Proyek (8 Kolom) + Kartu Aksen Lime Menunggu Approval (4 Kolom) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Kartu Hero Progres Proyek Utama */}
-        <Card className="lg:col-span-8 flex flex-col justify-between p-5 sm:p-6 shadow-card">
-          <div>
-            <CardHeader
-              icon={<Package className="w-5 h-5 text-forest-900" />}
-              title="Progres Produksi Proyek Utama"
-              subtitle={
-                mainProject
-                  ? `${mainProject.nama} (Target: ${formatNumber(mainProject.target_pcs)} pcs)`
-                  : "Belum ada proyek aktif"
-              }
-              action={
-                mainProject ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-semibold">
-                    <TrendingUp className="w-3 h-3" /> Berjalan
-                  </span>
-                ) : undefined
-              }
-            />
-            <div className="mt-2">
-              <div className="text-[36px] sm:text-[44px] font-semibold text-ink leading-tight tabular-nums">
-                {formatNumber(totalApprovedMain)}{" "}
-                <span className="text-[18px] sm:text-[20px] font-normal text-muted">
-                  / {formatNumber(targetPcs)} pcs
-                </span>
-              </div>
-              <p className="text-[13px] text-muted mt-1.5">
-                {mainProject ? (
-                  <>
-                    Tarif: <strong className="text-forest-900">{formatRupiah(mainProject.tarif_per_pcs)} / pcs</strong> · Target Harian: 100 pcs / penjahit
-                  </>
-                ) : (
-                  "Buka menu Proyek untuk membuat proyek baru."
-                )}
-              </p>
-            </div>
-
-            <div className="mt-6 space-y-1.5">
-              <div className="flex justify-between text-[12px] text-muted">
-                <span>Persentase Tercapai</span>
-                <span className="font-semibold text-ink tabular-nums">{progressPercent}%</span>
-              </div>
-              <ProgressBar value={progressPercent} max={100} />
-            </div>
-          </div>
-
-          <div className="mt-6 pt-4 border-t border-line/60 flex items-center justify-between text-[12px] text-muted">
-            <span>Sisa Target: {formatNumber(Math.max(0, targetPcs - totalApprovedMain))} pcs</span>
-            <Link
-              href="/owner/proyek"
-              className="font-semibold text-forest-900 hover:underline flex items-center gap-1"
-            >
-              Kelola Proyek <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-        </Card>
-
-        {/* Kartu Aksen Lime: Antrean Approval */}
-        <CardAccent className="lg:col-span-4 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-forest-900 text-white text-[11px] font-semibold">
-                <Clock className="w-3.5 h-3.5" /> Antrean Input
-              </span>
-              <span className="text-[12px] font-semibold text-forest-900/80">
-                Pagi Hari
-              </span>
-            </div>
-
-            <h3 className="text-[18px] font-semibold text-forest-900 mb-1 leading-snug">
-              Menunggu Approval
-            </h3>
-            <p className="text-[13px] text-forest-900/80 mb-4">
-              Input hasil kerja penjahit tadi malam siap diverifikasi dan disetujui.
-            </p>
-
-            <div className="text-[36px] font-semibold text-forest-900 tabular-nums leading-none mb-2">
-              {waitingCount || 0}{" "}
-              <span className="text-[16px] font-medium opacity-80">entri</span>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-forest-900/15 flex items-center justify-between">
-            <span className="text-[12px] font-semibold text-forest-900">
-              {waitingCount && waitingCount > 0 ? "Buka Antrean Sekarang" : "Tidak Ada Antrean"}
+      {/* ==============================================================================
+          0. CHIP PEMILIH PROYEK HORIZONTAL
+          ============================================================================== */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1 border-b border-line/60">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-[20px] sm:text-[22px] font-semibold text-ink leading-tight">
+              Dashboard Produksi
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-pill bg-surface-muted border border-line text-[11px] font-semibold text-muted">
+              {isAllProjectsView
+                ? "Semua Proyek"
+                : isCompletedView
+                ? "Arsip Selesai"
+                : selectedProject?.nama_proyek}
             </span>
-            <Link href="/owner/approval">
-              <Button
-                variant="accentAction"
-                size="round36"
-                aria-label="Ke halaman antrean approval"
-              />
-            </Link>
           </div>
-        </CardAccent>
+          <p className="text-[12px] sm:text-[13px] text-muted mt-0.5">
+            Monitoring progres pesanan konveksi, efektivitas penjahit, dan rekap upah mingguan.
+          </p>
+        </div>
+
+        {/* Tautan Cepat Kelola Proyek */}
+        <Link href="/owner/proyek" className="shrink-0">
+          <Button variant="secondary" size="sm" className="h-9 px-3.5 text-[12px]">
+            <Briefcase className="w-3.5 h-3.5 mr-1.5" />
+            Kelola Proyek
+          </Button>
+        </Link>
       </div>
 
-      {/* 2. BARIS TENGAH: Produksi Minggu Ini (Ring) + Upah Minggu Ini (Bar) + Antrean Singkat */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* A. RingProgress Produksi Minggu Ini */}
-        <Card className="p-5 sm:p-6 shadow-card flex flex-col items-center justify-between text-center">
-          <div className="w-full text-left">
-            <CardHeader
-              title="Produksi Minggu Ini"
-              subtitle="Total pcs disetujui seluruh penjahit"
-            />
-          </div>
+      {/* Baris Chip Selector Horizontal */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1 no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
+        {/* Chip 1: Semua Proyek */}
+        <Link
+          href="/owner/dashboard?project=all"
+          className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-pill text-[13px] font-semibold whitespace-nowrap transition-all select-none ${
+            isAllProjectsView
+              ? "bg-forest-900 text-white shadow-sm ring-2 ring-forest-900/20"
+              : "bg-surface border border-line text-muted hover:text-ink hover:border-forest-900/30"
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5" />
+          <span>Semua proyek</span>
+          <span
+            className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold tabular-nums ${
+              isAllProjectsView ? "bg-lime-400 text-forest-900" : "bg-surface-muted text-muted"
+            }`}
+          >
+            {activeProjects.length}
+          </span>
+        </Link>
 
-          <div className="py-2">
-            <RingProgress
-              value={weekPcsTotal}
-              max={1500}
-              size={150}
-              strokeWidth={14}
-              label="pcs disetujui"
-              badge={`Total ${formatNumber(weekPcsTotal)} pcs`}
-            />
-          </div>
+        {/* Chip per Proyek Aktif */}
+        {activeProjects.map((p) => {
+          const isSelected = selectedProjectParam === p.project_id;
+          const pct = Math.min(100, Math.round(Number(p.persentase_progres || 0)));
+          const shortName =
+            p.nama_proyek.length > 20 ? p.nama_proyek.slice(0, 18) + "…" : p.nama_proyek;
 
-          <p className="text-[12px] text-muted pt-2 border-t border-line/60 w-full text-center">
-            Siklus: {formatDateId(startDate)} - {formatDateId(endDate)}
-          </p>
-        </Card>
+          return (
+            <Link
+              key={p.project_id}
+              href={`/owner/dashboard?project=${p.project_id}`}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-pill text-[13px] font-semibold whitespace-nowrap transition-all select-none ${
+                isSelected
+                  ? "bg-forest-900 text-white shadow-sm ring-2 ring-forest-900/20"
+                  : "bg-surface border border-line text-muted hover:text-ink hover:border-forest-900/30"
+              }`}
+            >
+              <Package className="w-3.5 h-3.5" />
+              <span>{shortName}</span>
+              <span
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold tabular-nums ${
+                  isSelected ? "bg-lime-400 text-forest-900" : "bg-surface-muted text-forest-900"
+                }`}
+              >
+                {pct}%
+              </span>
+            </Link>
+          );
+        })}
 
-        {/* B. Rincian Upah Top Penjahit Minggu Ini */}
-        <Card className="p-5 sm:p-6 shadow-card flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between pb-3 border-b border-line/60 mb-3">
+        {/* Chip Proyek Selesai */}
+        <Link
+          href="/owner/dashboard?project=completed"
+          className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-pill text-[13px] font-semibold whitespace-nowrap transition-all select-none ${
+            isCompletedView
+              ? "bg-forest-900 text-white shadow-sm ring-2 ring-forest-900/20"
+              : "bg-surface border border-line text-muted hover:text-ink hover:border-forest-900/30"
+          }`}
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          <span>Selesai</span>
+          {completedProjects.length > 0 && (
+            <span
+              className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold tabular-nums ${
+                isCompletedView ? "bg-lime-400 text-forest-900" : "bg-surface-muted text-muted"
+              }`}
+            >
+              {completedProjects.length}
+            </span>
+          )}
+        </Link>
+      </div>
+
+      {/* ==============================================================================
+          1. TAMPILAN: SEMUA PROYEK (DEFAULT / ?project=all)
+          ============================================================================== */}
+      {isAllProjectsView && (
+        <div className="space-y-6">
+          {/* A. 4 Kartu Ringkasan Akumulasi Lintas Proyek */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {/* 1. Proyek Aktif */}
+            <Card className="p-4 sm:p-5 shadow-card flex flex-col justify-between">
               <div>
-                <h3 className="text-[16px] font-semibold text-ink leading-snug">
-                  Upah Minggu Ini
-                </h3>
-                <p className="text-[12px] text-muted">Performa penjahit teratas</p>
+                <span className="text-[11px] font-semibold text-muted uppercase tracking-wider block mb-1">
+                  Proyek Berjalan
+                </span>
+                <strong className="text-[26px] sm:text-[28px] font-bold text-ink leading-tight tabular-nums block">
+                  {activeProjects.length}{" "}
+                  <span className="text-[14px] font-normal text-muted">proyek</span>
+                </strong>
               </div>
-              <strong className="text-forest-900 font-semibold text-[15px] tabular-nums">
-                {formatRupiah(weekWageTotal)}
-              </strong>
+              <p className="text-[12px] text-muted mt-2 pt-2 border-t border-line/60 flex items-center justify-between">
+                <span>Total pesanan aktif</span>
+                <Link href="/owner/proyek" className="font-semibold text-forest-900 hover:underline">
+                  Lihat →
+                </Link>
+              </p>
+            </Card>
+
+            {/* 2. Total Pcs Disetujui Minggu Ini */}
+            <Card className="p-4 sm:p-5 shadow-card flex flex-col justify-between">
+              <div>
+                <span className="text-[11px] font-semibold text-muted uppercase tracking-wider block mb-1">
+                  Produksi Minggu Ini
+                </span>
+                <strong className="text-[26px] sm:text-[28px] font-bold text-positive leading-tight tabular-nums block">
+                  {formatNumber(weekPcsTotal)}{" "}
+                  <span className="text-[14px] font-normal text-muted">pcs</span>
+                </strong>
+              </div>
+              <p className="text-[12px] text-muted mt-2 pt-2 border-t border-line/60">
+                Disetujui lintas seluruh proyek
+              </p>
+            </Card>
+
+            {/* 3. Total Upah Minggu Ini Lintas Proyek */}
+            <Card className="p-4 sm:p-5 shadow-card flex flex-col justify-between">
+              <div>
+                <span className="text-[11px] font-semibold text-muted uppercase tracking-wider block mb-1">
+                  Upah Minggu Ini
+                </span>
+                <strong className="text-[24px] sm:text-[26px] font-bold text-forest-900 leading-tight tabular-nums block">
+                  {formatRupiah(weekWageTotal)}
+                </strong>
+              </div>
+              <p className="text-[12px] text-muted mt-2 pt-2 border-t border-line/60 flex items-center justify-between">
+                <span>Dibayar tunai Sabtu</span>
+                <Link href="/owner/rekap" className="font-semibold text-forest-900 hover:underline">
+                  Rekap →
+                </Link>
+              </p>
+            </Card>
+
+            {/* 4. Menunggu Approval Lintas Proyek (Kartu Aksen Lime) */}
+            <CardAccent className="p-4 sm:p-5 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-semibold text-forest-900 uppercase tracking-wider">
+                    Menunggu Approval
+                  </span>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-pill bg-forest-900 text-lime-400">
+                    Pagi Hari
+                  </span>
+                </div>
+                <strong className="text-[26px] sm:text-[28px] font-bold text-forest-900 leading-tight tabular-nums block">
+                  {waitingCount || 0}{" "}
+                  <span className="text-[14px] font-normal opacity-80">entri</span>
+                </strong>
+              </div>
+              <div className="mt-2 pt-2 border-t border-forest-900/20 flex items-center justify-between text-[12px] font-semibold text-forest-900">
+                <span>{waitingCount && waitingCount > 0 ? "Siap diverifikasi" : "Semua diverifikasi"}</span>
+                <Link href="/owner/approval">
+                  <Button variant="accentAction" size="round36" aria-label="Buka approval" />
+                </Link>
+              </div>
+            </CardAccent>
+          </div>
+
+          {/* B. Grid Kartu Per Proyek Aktif */}
+          <div>
+            <div className="flex items-center justify-between mb-3.5">
+              <div>
+                <h2 className="text-[16px] font-semibold text-ink leading-snug">
+                  Daftar Proyek Aktif ({activeProjects.length})
+                </h2>
+                <p className="text-[12px] text-muted">
+                  Pilih kartu untuk melihat rincian progres, leaderboard, dan antrean proyek tersebut.
+                </p>
+              </div>
+              <span className="text-[12px] font-medium text-muted hidden sm:inline">
+                Klik kartu untuk detail
+              </span>
             </div>
 
-            {topPenjahitMingguIni.length === 0 ? (
-              <div className="text-center py-8 text-muted text-[13px]">
-                Belum ada upah disetujui minggu ini.
-              </div>
+            {activeProjects.length === 0 ? (
+              <Card className="p-8 text-center text-muted text-[13px]">
+                <Package className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                Belum ada proyek berstatus aktif saat ini.
+              </Card>
             ) : (
-              <div className="space-y-3">
-                {topPenjahitMingguIni.map((p) => {
-                  const pct = weekWageTotal > 0 ? Math.round((p.upah / weekWageTotal) * 100) : 0;
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {activeProjects.map((p) => {
+                  const pct = Math.min(100, Math.round(Number(p.persentase_progres || 0)));
+                  const deadlineInfo = getDeadlineStatus(p.deadline);
+
                   return (
-                    <div key={p.nama} className="space-y-1">
-                      <div className="flex justify-between text-[12px]">
-                        <span className="font-semibold text-ink truncate max-w-[120px]">
-                          {p.nama}
-                        </span>
-                        <span className="font-medium text-forest-900 tabular-nums">
-                          {formatRupiah(p.upah)} ({p.pcs} pcs)
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full bg-surface-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-lime-400 rounded-full"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
+                    <Link
+                      key={p.project_id}
+                      href={`/owner/dashboard?project=${p.project_id}`}
+                      className="group block"
+                    >
+                      <Card className="p-5 h-full flex flex-col justify-between shadow-card hover:border-forest-900/50 hover:shadow-md transition-all">
+                        <div>
+                          {/* Header Kartu Proyek */}
+                          <div className="flex items-start justify-between gap-2 mb-2.5">
+                            <h3 className="text-[15px] font-semibold text-ink leading-snug group-hover:text-forest-900 transition-colors">
+                              {p.nama_proyek}
+                            </h3>
+                            <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-bold">
+                              {formatRupiah(p.tarif_per_pcs)} / pcs
+                            </span>
+                          </div>
+
+                          {/* Angka Progres */}
+                          <div className="flex items-baseline justify-between mt-3 mb-1.5 text-[13px]">
+                            <span className="text-muted">Progres Produksi</span>
+                            <span className="font-semibold text-ink tabular-nums">
+                              {formatNumber(p.total_pcs_disetujui)}{" "}
+                              <span className="text-muted font-normal">
+                                / {formatNumber(p.target_pcs)} pcs
+                              </span>
+                            </span>
+                          </div>
+
+                          {/* Progress Bar */}
+                          <ProgressBar value={pct} max={100} />
+
+                          {/* Deadline & Sisa Target */}
+                          <div className="mt-4 pt-3 border-t border-line/60 grid grid-cols-2 gap-2 text-[12px]">
+                            <div>
+                              <span className="text-muted block text-[11px]">Batas Waktu:</span>
+                              <span
+                                className={`font-medium ${
+                                  deadlineInfo.isLate ? "text-negative font-semibold" : "text-ink"
+                                }`}
+                              >
+                                {deadlineInfo.label}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-muted block text-[11px]">Antrean Input:</span>
+                              {p.total_entri_menunggu > 0 ? (
+                                <span className="inline-flex items-center gap-1 font-semibold text-[#B77407]">
+                                  <Clock className="w-3 h-3" />
+                                  {p.total_entri_menunggu} menunggu
+                                </span>
+                              ) : (
+                                <span className="text-positive font-medium">Selesai diperiksa</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Footer Kartu */}
+                        <div className="mt-4 pt-2 text-right">
+                          <span className="text-[12px] font-semibold text-forest-900 group-hover:underline inline-flex items-center gap-1">
+                            Lihat Dashboard Proyek <ArrowRight className="w-3.5 h-3.5" />
+                          </span>
+                        </div>
+                      </Card>
+                    </Link>
                   );
                 })}
               </div>
             )}
           </div>
 
-          <div className="pt-3 border-t border-line/60 text-right">
-            <Link
-              href="/owner/rekap"
-              className="text-[12px] font-semibold text-forest-900 hover:underline flex items-center justify-end gap-1"
-            >
-              Lihat Rekap Lengkap <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-        </Card>
-
-        {/* C. Antrean Singkat Approval */}
-        <Card className="p-5 sm:p-6 shadow-card flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between pb-3 border-b border-line/60 mb-3">
-              <div>
-                <h3 className="text-[16px] font-semibold text-ink leading-snug">
-                  Antrean Singkat
-                </h3>
-                <p className="text-[12px] text-muted">Input terbaru menunggu approval</p>
+          {/* C. Bagian Bawah: Produksi Ring + Top Upah Bar + Antrean Singkat (Semua Proyek) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+            {/* Produksi Minggu Ini */}
+            <Card className="p-5 sm:p-6 shadow-card flex flex-col items-center justify-between text-center">
+              <div className="w-full text-left">
+                <CardHeader
+                  title="Produksi Minggu Ini"
+                  subtitle="Cakupan: Seluruh Proyek Aktif"
+                />
               </div>
-              <span className="text-[12px] font-semibold text-[#B77407] bg-warning/15 px-2 py-0.5 rounded-pill tabular-nums">
-                {waitingCount || 0}
+
+              <div className="py-2">
+                <RingProgress
+                  value={weekPcsTotal}
+                  max={Math.max(1000, weekPcsTotal * 1.2)}
+                  size={150}
+                  strokeWidth={14}
+                  label="pcs disetujui"
+                  badge={`Total ${formatNumber(weekPcsTotal)} pcs`}
+                />
+              </div>
+
+              <p className="text-[12px] text-muted pt-2 border-t border-line/60 w-full text-center">
+                Siklus: {formatDateId(startDate)} - {formatDateId(endDate)}
+              </p>
+            </Card>
+
+            {/* Top Penjahit Minggu Ini */}
+            <Card className="p-5 sm:p-6 shadow-card flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between pb-3 border-b border-line/60 mb-3">
+                  <div>
+                    <h3 className="text-[16px] font-semibold text-ink leading-snug">
+                      Upah Minggu Ini
+                    </h3>
+                    <p className="text-[12px] text-muted">Cakupan: Seluruh Proyek</p>
+                  </div>
+                  <strong className="text-forest-900 font-semibold text-[15px] tabular-nums">
+                    {formatRupiah(weekWageTotal)}
+                  </strong>
+                </div>
+
+                {topPenjahitMingguIni.length === 0 ? (
+                  <div className="text-center py-8 text-muted text-[13px]">
+                    Belum ada upah disetujui minggu ini.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {topPenjahitMingguIni.map((p) => {
+                      const pct =
+                        weekWageTotal > 0 ? Math.round((p.upah / weekWageTotal) * 100) : 0;
+                      return (
+                        <div key={p.nama} className="space-y-1">
+                          <div className="flex justify-between text-[12px]">
+                            <span className="font-semibold text-ink truncate max-w-[120px]">
+                              {p.nama}
+                            </span>
+                            <span className="font-medium text-forest-900 tabular-nums">
+                              {formatRupiah(p.upah)} ({p.pcs} pcs)
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full bg-surface-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-lime-400 rounded-full"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-line/60 text-right">
+                <Link
+                  href="/owner/rekap"
+                  className="text-[12px] font-semibold text-forest-900 hover:underline flex items-center justify-end gap-1"
+                >
+                  Lihat Rekap Lengkap <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            </Card>
+
+            {/* Antrean Singkat Approval Lintas Proyek */}
+            <Card className="p-5 sm:p-6 shadow-card flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between pb-3 border-b border-line/60 mb-3">
+                  <div>
+                    <h3 className="text-[16px] font-semibold text-ink leading-snug">
+                      Antrean Singkat
+                    </h3>
+                    <p className="text-[12px] text-muted">Semua proyek menunggu</p>
+                  </div>
+                  <span className="text-[12px] font-semibold text-[#B77407] bg-warning/15 px-2 py-0.5 rounded-pill tabular-nums">
+                    {waitingCount || 0}
+                  </span>
+                </div>
+
+                {waitingPreview.length === 0 ? (
+                  <div className="text-center py-8 text-muted text-[13px]">
+                    Semua input sudah diverifikasi.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-line/60">
+                    {waitingPreview.map((w) => (
+                      <div key={w.id} className="py-2.5 flex items-center justify-between text-[12px]">
+                        <div className="min-w-0">
+                          <strong className="text-ink block truncate">{w.nama_penjahit}</strong>
+                          <span className="text-muted block text-[11px] truncate">
+                            {w.nama_proyek} · {formatDateId(w.tanggal_kerja)}
+                          </span>
+                        </div>
+                        <span className="font-semibold text-ink tabular-nums shrink-0">
+                          {formatNumber(w.qty)} pcs
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-line/60">
+                <Link href="/owner/approval">
+                  <Button variant="secondary" size="sm" className="w-full text-[12px]">
+                    <CheckSquare className="w-3.5 h-3.5 mr-1" />
+                    Buka Antrean Approval
+                  </Button>
+                </Link>
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* ==============================================================================
+          2. TAMPILAN: SATU PROYEK SPESIFIK (?project=<project_id>)
+          ============================================================================== */}
+      {isSingleProjectView && selectedProject && (
+        <div className="space-y-6">
+          {/* Banner Cakupan Proyek */}
+          <div className="flex items-center justify-between p-3.5 bg-surface rounded-card border border-line">
+            <div className="flex items-center gap-2">
+              <Package className="w-4 h-4 text-forest-900" />
+              <span className="text-[13px] font-semibold text-ink">
+                Cakupan: {selectedProject.nama_proyek}
               </span>
             </div>
-
-            {waitingPreview.length === 0 ? (
-              <div className="text-center py-8 text-muted text-[13px]">
-                Semua input sudah diverifikasi.
-              </div>
-            ) : (
-              <div className="divide-y divide-line/60">
-                {waitingPreview.map((w) => (
-                  <div key={w.id} className="py-2.5 flex items-center justify-between text-[12px]">
-                    <div className="min-w-0">
-                      <strong className="text-ink block truncate">{w.nama_penjahit}</strong>
-                      <span className="text-muted block text-[11px] truncate">
-                        {w.nama_proyek} · {formatDateId(w.tanggal_kerja)}
-                      </span>
-                    </div>
-                    <span className="font-semibold text-ink tabular-nums shrink-0">
-                      {formatNumber(w.qty)} pcs
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="pt-3 border-t border-line/60">
-            <Link href="/owner/approval">
-              <Button variant="secondary" size="sm" className="w-full text-[12px]">
-                <CheckSquare className="w-3.5 h-3.5 mr-1" />
-                Buka Antrean Approval
-              </Button>
+            <Link
+              href="/owner/dashboard?project=all"
+              className="text-[12px] font-semibold text-forest-900 hover:underline flex items-center gap-1"
+            >
+              Lihat Semua Proyek <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
-        </Card>
-      </div>
 
-      {/* 3. LEADERBOARD OWNER PER PROYEK LENGKAP */}
-      <Card className="p-5 sm:p-6 shadow-card">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-line/60 mb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Trophy className="w-5 h-5 text-forest-900" />
-              <h3 className="text-[18px] font-semibold text-ink">
-                Leaderboard Proyek Konveksi
-              </h3>
-            </div>
-            <p className="text-[12px] text-muted mt-0.5">
-              Peringkat produksi, akumulasi upah, dan status ambang reward (
-              {mainProject ? mainProject.nama : "Proyek"})
-            </p>
+          {/* Baris 1: Hero Progres Proyek Ini (8 Kolom) + Kartu Lime Antrean Proyek Ini (4 Kolom) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Kartu Hero Progres */}
+            <Card className="lg:col-span-8 flex flex-col justify-between p-5 sm:p-6 shadow-card">
+              <div>
+                <CardHeader
+                  icon={<Package className="w-5 h-5 text-forest-900" />}
+                  title={selectedProject.nama_proyek}
+                  subtitle={`Target Pesanan: ${formatNumber(selectedProject.target_pcs)} pcs`}
+                  action={
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-semibold">
+                      <TrendingUp className="w-3 h-3" /> Berjalan
+                    </span>
+                  }
+                />
+                <div className="mt-2">
+                  <div className="text-[36px] sm:text-[44px] font-semibold text-ink leading-tight tabular-nums">
+                    {formatNumber(selectedProject.total_pcs_disetujui)}{" "}
+                    <span className="text-[18px] sm:text-[20px] font-normal text-muted">
+                      / {formatNumber(selectedProject.target_pcs)} pcs
+                    </span>
+                  </div>
+                  <p className="text-[13px] text-muted mt-1.5">
+                    Tarif:{" "}
+                    <strong className="text-forest-900">
+                      {formatRupiah(selectedProject.tarif_per_pcs)} / pcs
+                    </strong>{" "}
+                    · Deadline: {formatDateId(selectedProject.deadline)} (
+                    {getDeadlineStatus(selectedProject.deadline).label})
+                  </p>
+                </div>
+
+                <div className="mt-6 space-y-1.5">
+                  <div className="flex justify-between text-[12px] text-muted">
+                    <span>Persentase Tercapai</span>
+                    <span className="font-semibold text-ink tabular-nums">
+                      {Math.min(100, Math.round(selectedProject.persentase_progres))}%
+                    </span>
+                  </div>
+                  <ProgressBar
+                    value={Math.min(100, Math.round(selectedProject.persentase_progres))}
+                    max={100}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-line/60 flex items-center justify-between text-[12px] text-muted">
+                <span>
+                  Sisa Target: {formatNumber(selectedProject.sisa_target_pcs)} pcs
+                </span>
+                <Link
+                  href="/owner/proyek"
+                  className="font-semibold text-forest-900 hover:underline flex items-center gap-1"
+                >
+                  Ubah Parameter Proyek <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            </Card>
+
+            {/* Kartu Lime: Antrean Approval Proyek Ini */}
+            <CardAccent className="lg:col-span-4 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-forest-900 text-white text-[11px] font-semibold">
+                    <Clock className="w-3.5 h-3.5" /> Antrean Proyek Ini
+                  </span>
+                  <span className="text-[12px] font-semibold text-forest-900/80 bg-forest-900/10 px-2.5 py-0.5 rounded-pill">
+                    Pagi Hari
+                  </span>
+                </div>
+
+                <h3 className="text-[18px] font-semibold text-forest-900 mb-1 leading-snug">
+                  Menunggu Approval
+                </h3>
+                <p className="text-[13px] text-forest-900/80 mb-4">
+                  Input penjahit untuk {selectedProject.nama_proyek} yang belum diverifikasi.
+                </p>
+
+                <div className="text-[36px] font-semibold text-forest-900 tabular-nums leading-none mb-2">
+                  {waitingCount || 0}{" "}
+                  <span className="text-[16px] font-medium opacity-80">entri</span>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-forest-900/15 flex items-center justify-between">
+                <span className="text-[12px] font-semibold text-forest-900">
+                  {waitingCount && waitingCount > 0
+                    ? "Buka Antrean Proyek Ini"
+                    : "Semua Terverifikasi"}
+                </span>
+                <Link href={`/owner/approval?project=${selectedProject.project_id}`}>
+                  <Button
+                    variant="accentAction"
+                    size="round36"
+                    aria-label="Ke antrean approval proyek ini"
+                  />
+                </Link>
+              </div>
+            </CardAccent>
           </div>
 
-          {mainProject && mainProject.ambang_reward > 0 && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-lime-100 text-positive text-[12px] font-semibold shrink-0">
-              <Sparkles className="w-3.5 h-3.5 text-positive" />
-              Ambang Reward: {formatNumber(mainProject.ambang_reward)} pcs
-            </span>
+          {/* Baris 2: Produksi Minggu Ini + Upah Minggu Ini + Antrean Singkat (Proyek Ini) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Produksi Minggu Ini Proyek Ini */}
+            <Card className="p-5 sm:p-6 shadow-card flex flex-col items-center justify-between text-center">
+              <div className="w-full text-left">
+                <CardHeader
+                  title="Produksi Minggu Ini"
+                  subtitle={`Cakupan: ${selectedProject.nama_proyek}`}
+                />
+              </div>
+
+              <div className="py-2">
+                <RingProgress
+                  value={weekPcsTotal}
+                  max={Math.max(500, weekPcsTotal * 1.3)}
+                  size={150}
+                  strokeWidth={14}
+                  label="pcs disetujui"
+                  badge={`Total ${formatNumber(weekPcsTotal)} pcs`}
+                />
+              </div>
+
+              <p className="text-[12px] text-muted pt-2 border-t border-line/60 w-full text-center">
+                Siklus: {formatDateId(startDate)} - {formatDateId(endDate)}
+              </p>
+            </Card>
+
+            {/* Upah Minggu Ini Proyek Ini */}
+            <Card className="p-5 sm:p-6 shadow-card flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between pb-3 border-b border-line/60 mb-3">
+                  <div>
+                    <h3 className="text-[16px] font-semibold text-ink leading-snug">
+                      Upah Minggu Ini
+                    </h3>
+                    <p className="text-[12px] text-muted truncate max-w-[140px]">
+                      {selectedProject.nama_proyek}
+                    </p>
+                  </div>
+                  <strong className="text-forest-900 font-semibold text-[15px] tabular-nums">
+                    {formatRupiah(weekWageTotal)}
+                  </strong>
+                </div>
+
+                {topPenjahitMingguIni.length === 0 ? (
+                  <div className="text-center py-8 text-muted text-[13px]">
+                    Belum ada entri disetujui untuk proyek ini minggu ini.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {topPenjahitMingguIni.map((p) => {
+                      const pct =
+                        weekWageTotal > 0 ? Math.round((p.upah / weekWageTotal) * 100) : 0;
+                      return (
+                        <div key={p.nama} className="space-y-1">
+                          <div className="flex justify-between text-[12px]">
+                            <span className="font-semibold text-ink truncate max-w-[120px]">
+                              {p.nama}
+                            </span>
+                            <span className="font-medium text-forest-900 tabular-nums">
+                              {formatRupiah(p.upah)} ({p.pcs} pcs)
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full bg-surface-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-lime-400 rounded-full"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-line/60 text-right">
+                <Link
+                  href="/owner/rekap"
+                  className="text-[12px] font-semibold text-forest-900 hover:underline flex items-center justify-end gap-1"
+                >
+                  Lihat Rekap Seluruh Upah <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            </Card>
+
+            {/* Antrean Singkat Proyek Ini */}
+            <Card className="p-5 sm:p-6 shadow-card flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between pb-3 border-b border-line/60 mb-3">
+                  <div>
+                    <h3 className="text-[16px] font-semibold text-ink leading-snug">
+                      Antrean Singkat
+                    </h3>
+                    <p className="text-[12px] text-muted truncate max-w-[140px]">
+                      {selectedProject.nama_proyek}
+                    </p>
+                  </div>
+                  <span className="text-[12px] font-semibold text-[#B77407] bg-warning/15 px-2 py-0.5 rounded-pill tabular-nums">
+                    {waitingCount || 0}
+                  </span>
+                </div>
+
+                {waitingPreview.length === 0 ? (
+                  <div className="text-center py-8 text-muted text-[13px]">
+                    Semua input proyek ini sudah diverifikasi.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-line/60">
+                    {waitingPreview.map((w) => (
+                      <div key={w.id} className="py-2.5 flex items-center justify-between text-[12px]">
+                        <div className="min-w-0">
+                          <strong className="text-ink block truncate">{w.nama_penjahit}</strong>
+                          <span className="text-muted block text-[11px] truncate">
+                            {formatDateId(w.tanggal_kerja)}
+                          </span>
+                        </div>
+                        <span className="font-semibold text-ink tabular-nums shrink-0">
+                          {formatNumber(w.qty)} pcs
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-line/60">
+                <Link href={`/owner/approval?project=${selectedProject.project_id}`}>
+                  <Button variant="secondary" size="sm" className="w-full text-[12px]">
+                    <CheckSquare className="w-3.5 h-3.5 mr-1" />
+                    Buka Antrean Proyek Ini
+                  </Button>
+                </Link>
+              </div>
+            </Card>
+          </div>
+
+          {/* Baris 3: Leaderboard Lengkap Proyek Ini */}
+          <Card className="p-5 sm:p-6 shadow-card">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-line/60 mb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Trophy className="w-5 h-5 text-forest-900" />
+                  <h3 className="text-[18px] font-semibold text-ink">
+                    Klasemen Penjahit: {selectedProject.nama_proyek}
+                  </h3>
+                </div>
+                <p className="text-[12px] text-muted mt-0.5">
+                  Peringkat pcs disetujui dan akumulasi upah khusus proyek ini.
+                </p>
+              </div>
+
+              {selectedProject.ambang_reward > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-lime-100 text-positive text-[12px] font-semibold shrink-0">
+                  <Sparkles className="w-3.5 h-3.5 text-positive" />
+                  Ambang Reward: {formatNumber(selectedProject.ambang_reward)} pcs
+                </span>
+              )}
+            </div>
+
+            {projectLeaderboard.length === 0 ? (
+              <div className="text-center py-10 text-muted text-[13px]">
+                Belum ada hasil produksi yang disetujui pada proyek ini.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-[13px]">
+                  <thead>
+                    <tr className="border-b border-line text-[12px] font-semibold text-muted uppercase tracking-wider">
+                      <th className="py-2.5 px-3 w-14 text-center">Peringkat</th>
+                      <th className="py-2.5 px-3">Nama Penjahit</th>
+                      <th className="py-2.5 px-3 text-right">Pcs Disetujui</th>
+                      <th className="py-2.5 px-3 text-right">Total Upah</th>
+                      <th className="py-2.5 px-3 text-center">Kualifikasi Reward</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line/60">
+                    {projectLeaderboard.map((row, idx) => (
+                      <tr key={row.user_id} className="hover:bg-surface-muted/50 transition">
+                        <td className="py-3 px-3 text-center font-bold">
+                          {idx === 0 ? (
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-400 text-forest-900 text-[12px]">
+                              1
+                            </span>
+                          ) : idx === 1 ? (
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-300 text-forest-900 text-[12px]">
+                              2
+                            </span>
+                          ) : idx === 2 ? (
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-600/30 text-amber-900 text-[12px]">
+                              3
+                            </span>
+                          ) : (
+                            <span className="text-muted tabular-nums">#{idx + 1}</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 font-semibold text-ink">
+                          {row.nama_penjahit}
+                        </td>
+                        <td className="py-3 px-3 text-right font-semibold text-ink tabular-nums">
+                          {formatNumber(row.total_pcs_disetujui)} pcs
+                        </td>
+                        <td className="py-3 px-3 text-right font-semibold text-forest-900 tabular-nums">
+                          {formatRupiah(row.total_upah)}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          {row.melewati_ambang_reward ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill bg-forest-900 text-lime-400 text-[11px] font-semibold">
+                              <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400" />
+                              Lolos Reward
+                            </span>
+                          ) : (
+                            <span className="text-muted text-[11px]">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* ==============================================================================
+          3. TAMPILAN: PROYEK SELESAI (?project=completed)
+          ============================================================================== */}
+      {isCompletedView && (
+        <div className="space-y-6">
+          {/* Banner Cakupan Selesai */}
+          <div className="flex items-center justify-between p-3.5 bg-surface rounded-card border border-line">
+            <div className="flex items-center gap-2">
+              <FolderArchive className="w-4 h-4 text-forest-900" />
+              <span className="text-[13px] font-semibold text-ink">
+                Cakupan: Arsip Proyek Selesai ({completedProjects.length} proyek)
+              </span>
+            </div>
+            <Link
+              href="/owner/dashboard?project=all"
+              className="text-[12px] font-semibold text-forest-900 hover:underline flex items-center gap-1"
+            >
+              Kembali ke Proyek Aktif <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          {completedProjects.length === 0 ? (
+            <Card className="p-12 text-center text-muted">
+              <div className="w-12 h-12 rounded-[16px] bg-surface-muted text-muted mx-auto flex items-center justify-center mb-3">
+                <FolderArchive className="w-6 h-6" />
+              </div>
+              <h3 className="text-[16px] font-semibold text-ink">
+                Belum ada proyek yang selesai
+              </h3>
+              <p className="text-[13px] text-muted max-w-sm mx-auto mt-1 mb-5">
+                Proyek yang telah mencapai target atau telah ditutup akan diarsipkan di sini.
+              </p>
+              <Link href="/owner/dashboard?project=all">
+                <Button variant="secondary" size="sm">
+                  Lihat Proyek Aktif
+                </Button>
+              </Link>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {completedProjects.map((p) => {
+                const pct = Math.min(100, Math.round(Number(p.persentase_progres || 0)));
+
+                return (
+                  <Card
+                    key={p.project_id}
+                    className="p-5 flex flex-col justify-between shadow-card bg-surface/90"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <h3 className="text-[15px] font-semibold text-ink leading-snug">
+                          {p.nama_proyek}
+                        </h3>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-pill bg-surface-muted text-muted text-[11px] font-semibold">
+                          <CheckCircle2 className="w-3 h-3 text-positive" /> Selesai
+                        </span>
+                      </div>
+
+                      <div className="mt-3 mb-1.5 flex items-baseline justify-between text-[13px]">
+                        <span className="text-muted">Total Tercapai</span>
+                        <span className="font-semibold text-ink tabular-nums">
+                          {formatNumber(p.total_pcs_disetujui)} / {formatNumber(p.target_pcs)} pcs
+                        </span>
+                      </div>
+
+                      <ProgressBar value={pct} max={100} />
+
+                      <div className="mt-4 pt-3 border-t border-line/60 space-y-1 text-[12px] text-muted">
+                        <div className="flex justify-between">
+                          <span>Tarif Borongan:</span>
+                          <strong className="text-ink">{formatRupiah(p.tarif_per_pcs)} / pcs</strong>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Periode:</span>
+                          <span>
+                            {formatDateId(p.tanggal_mulai)} - {formatDateId(p.deadline)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-line/60 text-right">
+                      <Link
+                        href={`/owner/dashboard?project=${p.project_id}`}
+                        className="text-[12px] font-semibold text-forest-900 hover:underline inline-flex items-center gap-1"
+                      >
+                        Buka Arsip Proyek <ArrowRight className="w-3.5 h-3.5" />
+                      </Link>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
           )}
         </div>
-
-        {projectLeaderboard.length === 0 ? (
-          <div className="text-center py-10 text-muted text-[13px]">
-            Belum ada hasil produksi yang disetujui pada proyek ini.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-[13px]">
-              <thead>
-                <tr className="border-b border-line text-[12px] font-semibold text-muted uppercase tracking-wider">
-                  <th className="py-2.5 px-3 w-14 text-center">Peringkat</th>
-                  <th className="py-2.5 px-3">Nama Penjahit</th>
-                  <th className="py-2.5 px-3 text-right">Pcs Disetujui</th>
-                  <th className="py-2.5 px-3 text-right">Total Upah</th>
-                  <th className="py-2.5 px-3 text-center">Kualifikasi Reward</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line/60">
-                {projectLeaderboard.map((row, idx) => (
-                  <tr key={row.user_id} className="hover:bg-surface-muted/50 transition">
-                    <td className="py-3 px-3 text-center font-bold">
-                      {idx === 0 ? (
-                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-400 text-forest-900 text-[12px]">
-                          1
-                        </span>
-                      ) : idx === 1 ? (
-                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-300 text-forest-900 text-[12px]">
-                          2
-                        </span>
-                      ) : idx === 2 ? (
-                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-600/30 text-amber-900 text-[12px]">
-                          3
-                        </span>
-                      ) : (
-                        <span className="text-muted tabular-nums">#{idx + 1}</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-3 font-semibold text-ink">
-                      {row.nama_penjahit}
-                    </td>
-                    <td className="py-3 px-3 text-right font-semibold text-ink tabular-nums">
-                      {formatNumber(row.total_pcs_disetujui)} pcs
-                    </td>
-                    <td className="py-3 px-3 text-right font-semibold text-forest-900 tabular-nums">
-                      {formatRupiah(row.total_upah)}
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      {row.melewati_ambang_reward ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill bg-forest-900 text-lime-400 text-[11px] font-semibold">
-                          <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400" />
-                          Lolos Reward
-                        </span>
-                      ) : (
-                        <span className="text-muted text-[11px]">-</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+      )}
     </div>
   );
 }

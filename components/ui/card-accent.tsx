@@ -29,8 +29,8 @@ export function CardAccent({
       {...props}
     >
       {showDecoration && (
-        <div className="absolute top-4 right-4 text-forest-900/15 pointer-events-none select-none">
-          <Sparkles className="w-12 h-12" strokeWidth={1.5} />
+        <div className="absolute -bottom-2 right-4 text-forest-900/15 pointer-events-none select-none">
+          <Sparkles className="w-14 h-14" strokeWidth={1.5} />
         </div>
       )}
       <div className="relative z-10">{children}</div>

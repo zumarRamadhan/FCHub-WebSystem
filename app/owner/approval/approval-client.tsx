@@ -38,17 +38,25 @@ export interface ApprovalEntryItem {
 interface ApprovalClientProps {
   initialEntries: ApprovalEntryItem[];
   availableProjects: Array<{ id: string; nama: string }>;
+  initialProjectId?: string;
 }
 
 export function ApprovalClient({
   initialEntries,
   availableProjects,
+  initialProjectId = "all",
 }: ApprovalClientProps) {
   const [entries, setEntries] = React.useState<ApprovalEntryItem[]>(initialEntries);
 
   // Filter
-  const [selectedProjectId, setSelectedProjectId] = React.useState<string>("all");
+  const [selectedProjectId, setSelectedProjectId] = React.useState<string>(initialProjectId);
   const [selectedDate, setSelectedDate] = React.useState<string>("all");
+
+  React.useEffect(() => {
+    if (initialProjectId && initialProjectId !== "all") {
+      setSelectedProjectId(initialProjectId);
+    }
+  }, [initialProjectId]);
 
   // Loading state per item untuk mencegah double-click
   const [processingId, setProcessingId] = React.useState<string | null>(null);
@@ -261,6 +269,54 @@ export function ApprovalClient({
           </Button>
         )}
       </div>
+
+      {/* Quick Filter Chips Proyek */}
+      {availableProjects.length > 0 && (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
+          <button
+            type="button"
+            onClick={() => setSelectedProjectId("all")}
+            className={`px-3 py-1.5 rounded-pill text-[12px] font-semibold whitespace-nowrap transition-all ${
+              selectedProjectId === "all"
+                ? "bg-forest-900 text-white shadow-sm ring-1 ring-forest-900/30"
+                : "bg-surface border border-line text-muted hover:text-ink"
+            }`}
+          >
+            Semua Proyek
+          </button>
+          {availableProjects.map((p) => {
+            const isSelected = selectedProjectId === p.id;
+            const waitingForThisProject = entries.filter((e) => e.project_id === p.id).length;
+            const shortName = p.nama.length > 22 ? p.nama.slice(0, 20) + "…" : p.nama;
+
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setSelectedProjectId(p.id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-pill text-[12px] font-semibold whitespace-nowrap transition-all ${
+                  isSelected
+                    ? "bg-forest-900 text-white shadow-sm ring-1 ring-forest-900/30"
+                    : "bg-surface border border-line text-muted hover:text-ink"
+                }`}
+              >
+                <span>{shortName}</span>
+                {waitingForThisProject > 0 && (
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold tabular-nums ${
+                      isSelected
+                        ? "bg-lime-400 text-forest-900"
+                        : "bg-warning/20 text-[#B77407]"
+                    }`}
+                  >
+                    {waitingForThisProject}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Bar Filter Proyek & Tanggal */}
       {entries.length > 0 && (
