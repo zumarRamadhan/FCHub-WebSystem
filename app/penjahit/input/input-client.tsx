@@ -8,6 +8,7 @@ import {
   Layers,
   ArrowRight,
   Info,
+  ChevronDown,
 } from "lucide-react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,9 +25,15 @@ export interface ActiveProject {
 
 interface InputClientProps {
   projects: ActiveProject[];
+  initialLastUsedProjectId?: string;
 }
 
-export function InputClient({ projects }: InputClientProps) {
+const LOCAL_STORAGE_LAST_PROJECT_KEY = "fchub_last_project_id";
+
+export function InputClient({
+  projects,
+  initialLastUsedProjectId,
+}: InputClientProps) {
   const todayStr = getJakartaTodayString();
 
   // Kemarin dalam zona Asia/Jakarta
@@ -42,15 +49,63 @@ export function InputClient({ projects }: InputClientProps) {
     return formatter.format(d);
   }, []);
 
-  const [selectedProjectId, setSelectedProjectId] = React.useState<string>(
-    projects[0]?.id || ""
+  // 1. Simpan dan dapatkan proyek terakhir yang dipakai penjahit (localStorage + fallback server)
+  const [lastUsedId, setLastUsedId] = React.useState<string | undefined>(
+    initialLastUsedProjectId
   );
+
+  React.useEffect(() => {
+    try {
+      const storedId = localStorage.getItem(LOCAL_STORAGE_LAST_PROJECT_KEY);
+      if (storedId && projects.some((p) => p.id === storedId)) {
+        setLastUsedId(storedId);
+        setSelectedProjectId(storedId);
+        return;
+      }
+    } catch {
+      // Abaikan bila localStorage tidak tersedia (private browsing / sandbox)
+    }
+
+    if (initialLastUsedProjectId && projects.some((p) => p.id === initialLastUsedProjectId)) {
+      setSelectedProjectId(initialLastUsedProjectId);
+    } else if (projects.length > 0) {
+      setSelectedProjectId(projects[0].id);
+    }
+  }, [projects, initialLastUsedProjectId]);
+
+  // Urutkan opsi: proyek terakhir dipakai penjahit lebih dulu, lalu abjad
+  const sortedProjects = React.useMemo(() => {
+    const list = [...projects];
+    return list.sort((a, b) => {
+      if (lastUsedId && a.id === lastUsedId) return -1;
+      if (lastUsedId && b.id === lastUsedId) return 1;
+      return a.nama.localeCompare(b.nama, "id", { sensitivity: "base" });
+    });
+  }, [projects, lastUsedId]);
+
+  const [selectedProjectId, setSelectedProjectId] = React.useState<string>(() => {
+    if (initialLastUsedProjectId && projects.some((p) => p.id === initialLastUsedProjectId)) {
+      return initialLastUsedProjectId;
+    }
+    return projects[0]?.id || "";
+  });
+
+  const handleProjectChange = (newId: string) => {
+    setSelectedProjectId(newId);
+    setLastUsedId(newId);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_LAST_PROJECT_KEY, newId);
+    } catch {
+      // Abaikan error localStorage
+    }
+  };
 
   // Opsi tanggal: "hari-ini" | "kemarin" | "kustom"
   const [dateMode, setDateMode] = React.useState<"hari-ini" | "kemarin" | "kustom">("hari-ini");
   const [customDate, setCustomDate] = React.useState<string>(todayStr);
 
-  const activeDate = dateMode === "hari-ini" ? todayStr : dateMode === "kemarin" ? yesterdayStr : customDate;
+  const activeDate =
+    dateMode === "hari-ini" ? todayStr : dateMode === "kemarin" ? yesterdayStr : customDate;
 
   // Nilai pcs default target harian = 100
   const [qty, setQty] = React.useState<number>(100);
@@ -60,12 +115,7 @@ export function InputClient({ projects }: InputClientProps) {
   const [toastMessage, setToastMessage] = React.useState<string | null>(null);
 
   // Proyek yang sedang dipilih
-  const currentProject = projects.find((p) => p.id === selectedProjectId) || projects[0];
-
-  const projectOptions: SegmentedOption[] = projects.map((p) => ({
-    value: p.id,
-    label: p.nama,
-  }));
+  const currentProject = projects.find((p) => p.id === selectedProjectId) || sortedProjects[0];
 
   const dateOptions: SegmentedOption[] = [
     { value: "hari-ini", label: "Hari Ini" },
@@ -99,6 +149,13 @@ export function InputClient({ projects }: InputClientProps) {
       setErrorMessage(result.error || "Gagal mengirim hasil kerja.");
       setIsSubmitting(false);
       return;
+    }
+
+    // Simpan proyek terakhir sukses ke localStorage
+    try {
+      localStorage.setItem(LOCAL_STORAGE_LAST_PROJECT_KEY, selectedProjectId);
+    } catch {
+      // Abaikan error localStorage
     }
 
     // Sesuai design-fchub.md:
@@ -159,44 +216,67 @@ export function InputClient({ projects }: InputClientProps) {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* 1. Pemilih Proyek (SegmentedPill / Tab) */}
+            {/* 1. Pemilih Proyek (Dropdown Native <select>) */}
             <div>
-              <label className="block text-[12px] font-semibold text-muted uppercase tracking-wider mb-2">
-                1. Pilih Proyek
-              </label>
-              {projects.length <= 3 ? (
-                <SegmentedPill
-                  options={projectOptions}
-                  value={selectedProjectId}
-                  onChange={setSelectedProjectId}
-                  activeVariant="dark"
-                  className="w-full flex justify-between"
-                />
-              ) : (
-                <div className="grid grid-cols-1 gap-2">
-                  {projects.map((p) => {
-                    const isSelected = p.id === selectedProjectId;
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setSelectedProjectId(p.id)}
-                        className={`p-3 rounded-panel border text-left flex items-center justify-between transition ${
-                          isSelected
-                            ? "bg-forest-900 text-white border-forest-900"
-                            : "bg-surface-muted text-ink border-line hover:border-forest-900/40"
-                        }`}
-                      >
-                        <span className="text-[13px] font-semibold truncate">
-                          {p.nama}
-                        </span>
-                        <span className={`text-[12px] ${isSelected ? "text-lime-400" : "text-muted"}`}>
-                          {formatRupiah(p.tarif_per_pcs)}/pcs
-                        </span>
-                      </button>
-                    );
-                  })}
+              <div className="flex items-center justify-between mb-2">
+                <label
+                  htmlFor="project-select"
+                  className="block text-[12px] font-semibold text-muted uppercase tracking-wider"
+                >
+                  1. Pilih Proyek
+                </label>
+                {projects.length === 1 && (
+                  <span className="text-[11px] font-semibold text-forest-900 bg-lime-100 px-2.5 py-0.5 rounded-pill border border-lime-400/30">
+                    1 Proyek Aktif
+                  </span>
+                )}
+              </div>
+
+              {projects.length === 0 ? (
+                <div className="p-4 rounded-[14px] bg-surface-muted border border-line text-center text-muted">
+                  <p className="text-[13px] font-semibold text-ink">
+                    Tidak ada proyek aktif saat ini
+                  </p>
+                  <p className="text-[11px] text-muted mt-0.5">
+                    Silakan hubungi owner untuk mengaktifkan proyek sebelum mengisi input.
+                  </p>
                 </div>
+              ) : (
+                <div className="relative">
+                  <select
+                    id="project-select"
+                    value={selectedProjectId}
+                    onChange={(e) => handleProjectChange(e.target.value)}
+                    disabled={projects.length === 1 || isSubmitting}
+                    className={`w-full min-h-[56px] h-14 pl-4 pr-11 bg-surface-muted border border-line rounded-[14px] text-[16px] text-ink font-medium appearance-none transition-all truncate focus:outline-none focus:border-forest-900 focus:ring-2 focus:ring-forest-900/10 ${
+                      projects.length === 1
+                        ? "cursor-not-allowed opacity-90 select-none"
+                        : "cursor-pointer"
+                    }`}
+                  >
+                    {projects.length > 1 && !selectedProjectId && (
+                      <option value="" disabled hidden>
+                        Pilih proyek
+                      </option>
+                    )}
+                    {sortedProjects.map((p) => (
+                      <option key={p.id} value={p.id} className="text-ink text-[15px] py-2">
+                        {p.nama}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Ikon Chevron Lucide di kanan */}
+                  <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-muted">
+                    <ChevronDown className="w-5 h-5 stroke-[2]" />
+                  </div>
+                </div>
+              )}
+
+              {projects.length === 1 && (
+                <p className="text-[11px] text-muted mt-1.5 pl-0.5">
+                  Hanya ada satu proyek aktif saat ini. Pilihan otomatis diterapkan.
+                </p>
               )}
             </div>
 
@@ -240,7 +320,7 @@ export function InputClient({ projects }: InputClientProps) {
                   3. Jumlah Selesai (Pcs)
                 </label>
                 {currentProject && (
-                  <span className="text-[12px] text-muted">
+                  <span className="text-[12px] font-medium text-forest-900">
                     Tarif: {formatRupiah(currentProject.tarif_per_pcs)} / pcs
                   </span>
                 )}
@@ -269,7 +349,7 @@ export function InputClient({ projects }: InputClientProps) {
                 type="submit"
                 variant="primary"
                 className="w-full h-12 text-[14px] shadow-sm"
-                disabled={isSubmitting || qty <= 0}
+                disabled={isSubmitting || qty <= 0 || !selectedProjectId || projects.length === 0}
               >
                 {isSubmitting ? (
                   "Mengirim..."

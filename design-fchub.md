@@ -94,7 +94,9 @@ Kontras: teks di atas `lime-500` selalu `forest-900`, bukan putih.
 | Aksi bulat | Lingkaran 64px `lime-500`, ikon panah `forest-900` (pengganti tombol kirim/ke detail) |
 | Ikon kecil | Lingkaran 36px, ikon centang (setujui) dan X (tolak) di daftar approval |
 
-**Segmented pill**: dua sampai tiga opsi dalam wadah `surface-muted`, opsi aktif berlatar putih atau `forest-900`. Dipakai untuk memilih proyek dan rentang minggu.
+**Segmented pill**: dua sampai tiga opsi dalam wadah `surface-muted`, opsi aktif berlatar putih atau `forest-900`. Dipakai untuk memilih tanggal kerja (Hari Ini / Kemarin / Kustom) dan filter rentang minggu rekap upah.
+
+**Dropdown pemilih proyek (<select>)**: elemen `<select>` native dengan `appearance: none` dan ikon `ChevronDown` di kanan, sehingga di HP membuka pemilih bawaan perangkat (native picker). Tinggi minimal 56px, radius 14px, latar `surface-muted`, border `line`, teks 16px (mencegah zoom otomatis pada iOS), dan memotong nama proyek panjang dengan ellipsis satu baris. Dipakai khusus untuk memilih proyek di formulir Input penjahit.
 
 **Badge status**: pill kecil (tinggi 24, teks 12/500) sesuai pemetaan status.
 
@@ -129,7 +131,7 @@ Sapaan "Halo, {nama}" di kiri (24/600 dengan avatar bulat), tab pill di tengah (
 | Halaman | Isi |
 | --- | --- |
 | Beranda | Kartu hero "Pcs disetujui minggu ini" (angka besar, chip estimasi upah, tombol aksi bulat ke Input); kartu lime "Leaderboard proyek" (peringkat sendiri, progres menuju ambang reward); kartu "Hari ini" (ring pcs); daftar "Riwayat terbaru" dengan badge status |
-| Input | Segmented pill pilih proyek; chip tanggal (default hari ini); input angka besar; tombol primer lebar "Kirim" |
+| Input | Dropdown pilih proyek (<select> native 56px, rounded 14); Segmented pill tanggal (default hari ini); input angka besar; tombol primer lebar "Kirim" |
 | Riwayat | Daftar per tanggal dengan badge status dan catatan owner bila ditolak atau dikoreksi |
 | Leaderboard | Daftar peringkat: nomor, avatar, nama, total pcs, progress bar tipis; baris milik sendiri disorot `lime-100`; penanda bintang bagi yang melewati ambang |
 
