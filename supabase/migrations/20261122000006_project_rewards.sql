@@ -101,7 +101,7 @@ group by
 comment on view public.v_leaderboard is
   'Leaderboard owner untuk semua proyek; penanda reward hanya aktif jika reward_aktif = true.';
 
-grant select on public.v_leaderboard to authenticated, anon;
+grant select on public.v_leaderboard to authenticated;
 
 -- ==============================================================================
 -- 4. PERBARUI FUNGSI SECURITY DEFINER: get_project_leaderboard(uuid)
@@ -160,7 +160,7 @@ $$;
 comment on function public.get_project_leaderboard(uuid) is
   'Leaderboard publik untuk penjahit: hanya untuk proyek dengan reward_aktif = true (Aturan Bisnis #18).';
 
-grant execute on function public.get_project_leaderboard(uuid) to authenticated, anon;
+grant execute on function public.get_project_leaderboard(uuid) to authenticated;
 
 -- ==============================================================================
 -- 5. PERBARUI VIEW: v_tailor_projects (Tahap 14 & 15)
@@ -244,6 +244,9 @@ left join project_totals pt on pt.project_id = p.id;
 comment on view public.v_tailor_projects is
   'Rekap kontribusi penjahit per proyek: pcs, upah, persen kontribusi, ambang reward, rentang tanggal kerja, dan reward_aktif.';
 
-grant select on public.v_tailor_projects to authenticated, anon;
+grant select on public.v_tailor_projects to authenticated;
 
+revoke all on public.v_leaderboard from public, anon;
+revoke all on public.v_tailor_projects from public, anon;
+revoke all on function public.get_project_leaderboard(uuid) from public, anon;
 commit;
