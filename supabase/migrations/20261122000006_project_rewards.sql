@@ -7,7 +7,11 @@
 -- - Constraint: ambang_reward wajib > 0 dan <= target_pcs hanya jika reward_aktif = true.
 -- - v_leaderboard & get_project_leaderboard hanya menandai reward jika reward_aktif = true.
 -- - get_project_leaderboard (akses penjahit) hanya mengembalikan proyek bereward.
+-- - Seluruh script dibungkus transaksi (BEGIN ... COMMIT).
+-- - Semua view mempertahankan nama, tipe, dan urutan kolom lama; kolom baru di paling akhir.
 -- ==============================================================================
+
+begin;
 
 -- 1. Tambah kolom reward_aktif pada tabel projects
 alter table public.projects
@@ -16,7 +20,7 @@ alter table public.projects
 comment on column public.projects.reward_aktif is
   'Toggle manual owner untuk mengaktifkan kompetisi dan reward pada proyek besar (Aturan Bisnis #16).';
 
--- Set semua proyek lama menjadi reward_aktif = false
+-- Set semua proyek lama menjadi reward_aktif = false (jika ada nilai null)
 update public.projects
 set reward_aktif = false
 where reward_aktif is null;
@@ -36,21 +40,37 @@ alter table public.projects
 
 -- ==============================================================================
 -- 3. PERBARUI VIEW: v_leaderboard (Akses Owner)
+-- Drop & create untuk keamanan skema.
+-- Kolom lama (1..10) dipertahankan persis urutan, nama, dan tipenya:
+--   1: project_id (uuid)
+--   2: nama_proyek (text)
+--   3: user_id (uuid)
+--   4: nama_penjahit (text)
+--   5: username_penjahit (text)
+--   6: total_pcs_disetujui (bigint)
+--   7: total_upah (bigint)
+--   8: ambang_reward (integer)
+--   9: melewati_ambang_reward (boolean)
+--  10: rank_pcs (bigint)
+-- Kolom baru diletakkan di paling akhir (posisi 11):
+--  11: reward_aktif (boolean)
 -- Penanda melewati_ambang_reward HANYA true bila reward_aktif = true (Aturan Bisnis #9).
 -- ==============================================================================
-create or replace view public.v_leaderboard
+drop view if exists public.v_leaderboard;
+
+create view public.v_leaderboard
 with (security_invoker = true)
 as
 select
   p.id as project_id,
   p.nama as nama_proyek,
-  p.reward_aktif,
-  p.ambang_reward,
   u.id as user_id,
   u.nama as nama_penjahit,
   u.username as username_penjahit,
   coalesce(sum(case when pe.status = 'disetujui' then pe.qty_disetujui else 0 end), 0)::bigint as total_pcs_disetujui,
+  -- Aturan Bisnis #2: Upah = qty_disetujui * tarif_snapshot
   coalesce(sum(case when pe.status = 'disetujui' then pe.qty_disetujui * pe.tarif_snapshot else 0 end), 0)::bigint as total_upah,
+  p.ambang_reward,
   -- Aturan Bisnis #9: Penanda reward hanya muncul jika reward_aktif = true
   (
     p.reward_aktif = true and
@@ -60,7 +80,9 @@ select
   dense_rank() over (
     partition by p.id
     order by coalesce(sum(case when pe.status = 'disetujui' then pe.qty_disetujui else 0 end), 0) desc
-  ) as rank_pcs
+  ) as rank_pcs,
+  -- Kolom baru di paling akhir
+  p.reward_aktif as reward_aktif
 from public.projects p
 cross join public.users u
 left join public.production_entries pe
@@ -70,8 +92,8 @@ where u.role = 'penjahit' and u.aktif = true
 group by
   p.id,
   p.nama,
-  p.reward_aktif,
   p.ambang_reward,
+  p.reward_aktif,
   u.id,
   u.nama,
   u.username;
@@ -79,11 +101,15 @@ group by
 comment on view public.v_leaderboard is
   'Leaderboard owner untuk semua proyek; penanda reward hanya aktif jika reward_aktif = true.';
 
+grant select on public.v_leaderboard to authenticated, anon;
+
 -- ==============================================================================
 -- 4. PERBARUI FUNGSI SECURITY DEFINER: get_project_leaderboard(uuid)
 -- Aturan Bisnis #18: Leaderboard untuk penjahit HANYA menampilkan proyek bereward (reward_aktif = true).
 -- Jika proyek tidak memiliki reward aktif, fungsi mengembalikan 0 baris.
 -- ==============================================================================
+drop function if exists public.get_project_leaderboard(uuid);
+
 create or replace function public.get_project_leaderboard(p_project_id uuid)
 returns table (
   rank_position bigint,
@@ -134,11 +160,34 @@ $$;
 comment on function public.get_project_leaderboard(uuid) is
   'Leaderboard publik untuk penjahit: hanya untuk proyek dengan reward_aktif = true (Aturan Bisnis #18).';
 
+grant execute on function public.get_project_leaderboard(uuid) to authenticated, anon;
+
 -- ==============================================================================
 -- 5. PERBARUI VIEW: v_tailor_projects (Tahap 14 & 15)
--- Sertakan kolom reward_aktif dan pastikan penanda reward hanya aktif jika reward_aktif = true.
+-- Drop & create untuk keamanan skema.
+-- Kolom lama (1..15) dipertahankan persis urutan, nama, dan tipenya:
+--   1: user_id (uuid)
+--   2: project_id (uuid)
+--   3: nama_proyek (text)
+--   4: status_proyek (project_status)
+--   5: target_pcs (integer)
+--   6: tarif_per_pcs (integer)
+--   7: ambang_reward (integer)
+--   8: total_pcs (bigint)
+--   9: total_upah (bigint)
+--  10: grand_total_pcs_proyek (bigint)
+--  11: persen_kontribusi (numeric)
+--  12: melewati_ambang_reward (boolean)
+--  13: tanggal_pertama_kerja (date)
+--  14: tanggal_terakhir_kerja (date)
+--  15: total_hari_kerja_proyek (bigint)
+-- Kolom baru diletakkan di paling akhir (posisi 16):
+--  16: reward_aktif (boolean)
+-- Penanda melewati_ambang_reward hanya aktif jika reward_aktif = true.
 -- ==============================================================================
-create or replace view public.v_tailor_projects
+drop view if exists public.v_tailor_projects;
+
+create view public.v_tailor_projects
 with (security_invoker = true)
 as
 with project_totals as (
@@ -169,7 +218,6 @@ select
   p.status as status_proyek,
   p.target_pcs,
   p.tarif_per_pcs,
-  p.reward_aktif,
   p.ambang_reward,
   tpe.total_pcs,
   tpe.total_upah,
@@ -186,7 +234,16 @@ select
   ) as melewati_ambang_reward,
   tpe.tanggal_pertama_kerja,
   tpe.tanggal_terakhir_kerja,
-  tpe.total_hari_kerja_proyek
+  tpe.total_hari_kerja_proyek,
+  -- Kolom baru di paling akhir
+  p.reward_aktif as reward_aktif
 from tailor_project_entries tpe
 join public.projects p on p.id = tpe.project_id
 left join project_totals pt on pt.project_id = p.id;
+
+comment on view public.v_tailor_projects is
+  'Rekap kontribusi penjahit per proyek: pcs, upah, persen kontribusi, ambang reward, rentang tanggal kerja, dan reward_aktif.';
+
+grant select on public.v_tailor_projects to authenticated, anon;
+
+commit;
