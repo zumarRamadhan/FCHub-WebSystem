@@ -39,7 +39,7 @@ export default async function OwnerApprovalPage({
   // 2. Ambil daftar proyek untuk filter
   const { data: rawProjects } = await supabase
     .from("projects")
-    .select("id, nama")
+    .select("id, nama, status, warna, target_pcs")
     .order("status", { ascending: true })
     .order("nama", { ascending: true });
 
@@ -111,6 +111,9 @@ export default async function OwnerApprovalPage({
   const availableProjects = (rawProjects || []).map((p) => ({
     id: p.id,
     nama: p.nama,
+    warna: p.warna,
+    status: p.status,
+    target_pcs: p.target_pcs,
   }));
 
   return (

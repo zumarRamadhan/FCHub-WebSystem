@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { formatNumber, formatRupiah, formatDateId } from "@/lib/format";
 import { EntryFlagItem } from "@/lib/types/database";
+import { ProjectSelect, ProjectSelectItem } from "@/components/project-select";
 import {
   approveEntryAction,
   rejectEntryAction,
@@ -45,7 +46,7 @@ export interface ApprovalEntryItem {
 
 interface ApprovalClientProps {
   initialEntries: ApprovalEntryItem[];
-  availableProjects: Array<{ id: string; nama: string }>;
+  availableProjects: ProjectSelectItem[];
   initialProjectId?: string;
   initialFilter?: string;
 }
@@ -411,51 +412,39 @@ export function ApprovalClient({
         )}
       </div>
 
-      {/* Quick Filter Chips Proyek */}
+      {/* Pemilih Proyek Dropdown Pencarian */}
       {availableProjects.length > 0 && (
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
-          <button
-            type="button"
-            onClick={() => setSelectedProjectId("all")}
-            className={`px-3 py-1.5 rounded-pill text-[12px] font-semibold whitespace-nowrap transition-all ${
-              selectedProjectId === "all"
-                ? "bg-forest-900 text-white shadow-sm ring-1 ring-forest-900/30"
-                : "bg-surface border border-line text-muted hover:text-ink"
-            }`}
-          >
-            Semua Proyek
-          </button>
-          {availableProjects.map((p) => {
-            const isSelected = selectedProjectId === p.id;
-            const waitingForThisProject = entries.filter((e) => e.project_id === p.id).length;
-            const shortName = p.nama.length > 22 ? p.nama.slice(0, 20) + "…" : p.nama;
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface p-3 sm:p-4 rounded-panel border border-line shadow-card">
+          <div className="w-full sm:max-w-md">
+            <ProjectSelect
+              projects={availableProjects}
+              selectedProjectId={selectedProjectId}
+              onChange={(id) => {
+                setSelectedProjectId(id);
+                if (typeof window !== "undefined") {
+                  const params = new URLSearchParams(window.location.search);
+                  if (id === "all") {
+                    params.delete("project");
+                  } else {
+                    params.set("project", id);
+                  }
+                  const qs = params.toString();
+                  window.history.replaceState(null, "", qs ? `/owner/approval?${qs}` : "/owner/approval");
+                }
+              }}
+              syncWithUrl={false}
+              placeholder="Pilih atau cari proyek..."
+            />
+          </div>
 
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => setSelectedProjectId(p.id)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-pill text-[12px] font-semibold whitespace-nowrap transition-all ${
-                  isSelected
-                    ? "bg-forest-900 text-white shadow-sm ring-1 ring-forest-900/30"
-                    : "bg-surface border border-line text-muted hover:text-ink"
-                }`}
-              >
-                <span>{shortName}</span>
-                {waitingForThisProject > 0 && (
-                  <span
-                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold tabular-nums ${
-                      isSelected
-                        ? "bg-lime-400 text-forest-900"
-                        : "bg-warning/20 text-[#B77407]"
-                    }`}
-                  >
-                    {waitingForThisProject}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          <div className="flex items-center gap-2 text-[12px] text-muted">
+            <span>Filter Proyek:</span>
+            <span className="font-semibold text-ink">
+              {selectedProjectId === "all"
+                ? `Semua Proyek (${availableProjects.length})`
+                : availableProjects.find((p) => p.id === selectedProjectId)?.nama || "Semua Proyek"}
+            </span>
+          </div>
         </div>
       )}
 
@@ -522,20 +511,6 @@ export function ApprovalClient({
                 ))}
               </select>
             </div>
-
-            {/* Filter Proyek Dropdown */}
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="h-8 px-2.5 rounded-control bg-surface-muted border border-line text-[12px] text-ink focus:outline-none focus:border-forest-900 max-w-[200px]"
-            >
-              <option value="all">Semua Proyek</option>
-              {availableProjects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nama}
-                </option>
-              ))}
-            </select>
 
             {/* Toggle Urutkan Bertanda Dulu */}
             <button

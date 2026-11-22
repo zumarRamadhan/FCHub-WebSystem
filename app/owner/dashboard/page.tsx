@@ -7,7 +7,6 @@ import {
   Sparkles,
   Trophy,
   CheckSquare,
-  Layers,
   CheckCircle2,
   Briefcase,
   FolderArchive,
@@ -38,6 +37,7 @@ import { EntryStatus, EntryFlagItem, ProjectColorKey } from "@/lib/types/databas
 import { getProjectColor, getProjectInitials } from "@/lib/project-colors";
 import { DailyProductionChart, DailyProductionItem } from "@/components/dashboard/daily-production-chart";
 import { BelumInputCard, TailorItem } from "@/components/dashboard/belum-input-card";
+import { ProjectSelect } from "@/components/project-select";
 
 interface ProjectProgressRow {
   project_id: string;
@@ -512,80 +512,35 @@ export default async function OwnerDashboardPage({
         </div>
       </div>
 
-      {/* Baris Chip Selector Horizontal */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1 no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
-        {/* Chip 1: Semua Proyek */}
-        <Link
-          href="/owner/dashboard?project=all"
-          className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-pill text-[13px] font-semibold whitespace-nowrap transition-all select-none ${
-            isAllProjectsView
-              ? "bg-forest-900 text-white shadow-sm ring-2 ring-forest-900/20"
-              : "bg-surface border border-line text-muted hover:text-ink hover:border-forest-900/30"
-          }`}
-        >
-          <Layers className="w-3.5 h-3.5" />
-          <span>Semua proyek</span>
-          <span
-            className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold tabular-nums ${
-              isAllProjectsView ? "bg-lime-400 text-forest-900" : "bg-surface-muted text-muted"
-            }`}
-          >
-            {activeProjects.length}
+      {/* Pemilih Proyek Dropdown Pencarian */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface p-3 sm:p-4 rounded-panel border border-line shadow-card">
+        <div className="w-full sm:max-w-md">
+          <ProjectSelect
+            projects={allProjects.map((p) => ({
+              id: p.project_id,
+              nama: p.nama_proyek,
+              warna: p.warna,
+              status: p.status_proyek,
+              target_pcs: p.target_pcs,
+              persentase_progres: p.persentase_progres,
+            }))}
+            selectedProjectId={selectedProjectParam}
+            syncWithUrl={true}
+            placeholder="Pilih atau cari proyek..."
+          />
+        </div>
+
+        {/* Info Mode / Filter Aktif */}
+        <div className="flex items-center gap-2 text-[12px] text-muted">
+          <span>Tampilan:</span>
+          <span className="font-semibold text-ink">
+            {isAllProjectsView
+              ? `Semua Proyek (${activeProjects.length} aktif)`
+              : selectedProject
+              ? selectedProject.nama_proyek
+              : "Semua Proyek"}
           </span>
-        </Link>
-
-        {/* Chip per Proyek Aktif */}
-        {activeProjects.map((p) => {
-          const isSelected = selectedProjectParam === p.project_id;
-          const pct = Math.min(100, Math.round(Number(p.persentase_progres || 0)));
-          const shortName =
-            p.nama_proyek.length > 20 ? p.nama_proyek.slice(0, 18) + "…" : p.nama_proyek;
-          const pColor = getProjectColor(p.warna);
-
-          return (
-            <Link
-              key={p.project_id}
-              href={`/owner/dashboard?project=${p.project_id}`}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-pill text-[13px] font-semibold whitespace-nowrap transition-all select-none ${
-                isSelected
-                  ? "bg-forest-900 text-white shadow-sm ring-2 ring-forest-900/20"
-                  : "bg-surface border border-line text-muted hover:text-ink hover:border-forest-900/30"
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${pColor.dotClass}`} />
-              <span>{shortName}</span>
-              <span
-                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold tabular-nums ${
-                  isSelected ? "bg-lime-400 text-forest-900" : "bg-surface-muted text-forest-900"
-                }`}
-              >
-                {pct}%
-              </span>
-            </Link>
-          );
-        })}
-
-        {/* Chip Proyek Selesai */}
-        <Link
-          href="/owner/dashboard?project=completed"
-          className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-pill text-[13px] font-semibold whitespace-nowrap transition-all select-none ${
-            isCompletedView
-              ? "bg-forest-900 text-white shadow-sm ring-2 ring-forest-900/20"
-              : "bg-surface border border-line text-muted hover:text-ink hover:border-forest-900/30"
-          }`}
-        >
-          <CheckCircle2 className="w-3.5 h-3.5" />
-          <span>Selesai</span>
-          {completedProjects.length > 0 && (
-            <span
-              className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold tabular-nums ${
-                isCompletedView ? "bg-lime-400 text-forest-900" : "bg-surface-muted text-muted"
-              }`}
-            >
-              {completedProjects.length}
-            </span>
-          )}
-        </Link>
+        </div>
       </div>
 
       {/* ==============================================================================

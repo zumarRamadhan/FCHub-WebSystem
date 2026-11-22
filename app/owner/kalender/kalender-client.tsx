@@ -33,6 +33,7 @@ import {
   getProjectColor,
   getProjectInitials,
 } from "@/lib/project-colors";
+import { ProjectSelect } from "@/components/project-select";
 import {
   setCalendarExceptionAction,
   deleteCalendarExceptionAction,
@@ -285,16 +286,41 @@ export function KalenderClient({
     return monthEntries.filter((e) => e.tanggal_kerja === selectedDay.tanggal);
   }, [selectedDay, monthEntries]);
 
+  // Proyek relevan untuk legenda ringkas bulan yang ditampilkan (Aturan Requirement 5)
+  // Hanya memuat proyek yang memiliki catatan produksi, deadline, atau rentang kerja melintasi bulan ini
+  const monthRelevantProjects = React.useMemo(() => {
+    const startOfMonthStr = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
+    const lastDay = new Date(currentYear, currentMonth, 0).getDate();
+    const endOfMonthStr = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+    // Kumpulkan ID proyek yang memiliki produksi atau deadline bulan ini
+    const activeInMonthIds = new Set<string>();
+    monthDays.forEach((d) => {
+      d.proyek_produksi.forEach((p) => {
+        if (p.pcs_disetujui > 0 || p.pcs_menunggu > 0 || p.is_deadline) {
+          activeInMonthIds.add(p.project_id);
+        }
+      });
+    });
+
+    return projects.filter((p) => {
+      if (activeInMonthIds.has(p.id)) return true;
+      // Proyek yang rentang tanggalnya melintasi bulan ini
+      const isStartBeforeOrInMonth = p.tanggal_mulai <= endOfMonthStr;
+      const isEndAfterOrInMonth = !p.deadline || p.deadline >= startOfMonthStr;
+      return isStartBeforeOrInMonth && isEndAfterOrInMonth;
+    });
+  }, [projects, monthDays, currentYear, currentMonth]);
+
   return (
     <div className="space-y-6">
       {/* Notifikasi Aksi */}
       {actionMessage && (
         <div
-          className={`p-3.5 rounded-panel border text-[13px] flex items-center justify-between gap-2 transition-all ${
-            actionMessage.type === "success"
+          className={`p-3.5 rounded-panel border text-[13px] flex items-center justify-between gap-2 transition-all ${actionMessage.type === "success"
               ? "bg-lime-50 border-lime-200 text-forest-900"
               : "bg-red-50 border-red-200 text-negative"
-          }`}
+            }`}
         >
           <div className="flex items-center gap-2">
             {actionMessage.type === "success" ? (
@@ -357,8 +383,8 @@ export function KalenderClient({
         </div>
       </div>
 
-      {/* Bar Pengontrol Bulan & Filter Proyek */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-surface p-3 sm:p-4 rounded-panel border border-line shadow-card">
+      {/* Bar Pengontrol Bulan & Filter Proyek (Dropdown Pencarian) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface p-3 sm:p-4 rounded-panel border border-line shadow-card">
         {/* Kontrol Navigasi Bulan */}
         <div className="flex items-center gap-2">
           <button
@@ -394,42 +420,53 @@ export function KalenderClient({
           </button>
         </div>
 
-        {/* Filter Chip Proyek */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
-          <button
-            type="button"
-            onClick={() => handleSelectProject("all")}
-            className={`px-3 py-1.5 rounded-pill text-[12px] font-semibold transition shrink-0 ${
-              selectedProject === "all"
-                ? "bg-forest-900 text-white shadow-xs"
-                : "bg-surface-muted border border-line text-muted hover:text-ink"
-            }`}
-          >
-            Semua Proyek
-          </button>
-
-          {projects.map((proj) => {
-            const isSelected = selectedProject === proj.id;
-            const pColor = getProjectColor(proj.warna);
-
-            return (
-              <button
-                key={proj.id}
-                type="button"
-                onClick={() => handleSelectProject(proj.id)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-pill text-[12px] font-semibold transition shrink-0 ${
-                  isSelected
-                    ? `${pColor.bgClass} border-2 ${pColor.borderClass} ${pColor.textClass} shadow-xs`
-                    : "bg-surface-muted border border-line text-muted hover:text-ink"
-                }`}
-              >
-                <span className={`w-2.5 h-2.5 rounded-full ${pColor.dotClass}`} />
-                <span className="truncate max-w-[130px]">{proj.nama}</span>
-              </button>
-            );
-          })}
+        {/* Pemilih Proyek Dropdown Pencarian */}
+        <div className="w-full sm:w-72 lg:w-80 shrink-0">
+          <ProjectSelect
+            projects={projects.map((p) => ({
+              id: p.id,
+              nama: p.nama,
+              warna: p.warna,
+              status: p.status,
+              target_pcs: p.target_pcs,
+              persentase_progres: p.persentase_progres,
+            }))}
+            selectedProjectId={selectedProject}
+            onChange={(id) => handleSelectProject(id)}
+            syncWithUrl={false}
+          />
         </div>
       </div>
+
+      {/* Legenda Ringkas Proyek Bulan Ini (Requirement 5) */}
+      {/* Non-klik, dibungkus ke baris berikutnya tanpa gulir horizontal */}
+      {monthRelevantProjects.length > 0 && (
+        <div className="p-3 bg-surface rounded-card border border-line">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px]">
+            <span className="font-semibold text-muted text-[11px] uppercase tracking-wider shrink-0">
+              Proyek Bulan Ini:
+            </span>
+            {monthRelevantProjects.map((p) => {
+              const pColor = getProjectColor(p.warna);
+              return (
+                <div
+                  key={p.id}
+                  className="inline-flex items-center gap-1.5 select-none"
+                  title={`${p.nama} (${p.status})`}
+                >
+                  <span className={`w-2.5 h-2.5 rounded-full ${pColor.dotClass} shrink-0`} />
+                  <span className="font-medium text-ink truncate max-w-[200px]">
+                    {p.nama}
+                  </span>
+                  <span className="text-[10.5px] text-muted font-bold">
+                    ({getProjectInitials(p.nama)})
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Grid Kalender Bulanan */}
       <Card className="p-3 sm:p-5 shadow-card overflow-hidden">
@@ -440,9 +477,8 @@ export function KalenderClient({
             return (
               <div
                 key={dayName}
-                className={`text-center py-2 text-[12px] font-bold uppercase tracking-wider ${
-                  isWeekend ? "text-negative/80" : "text-muted"
-                }`}
+                className={`text-center py-2 text-[12px] font-bold uppercase tracking-wider ${isWeekend ? "text-negative/80" : "text-muted"
+                  }`}
               >
                 {dayName}
               </div>
@@ -479,24 +515,22 @@ export function KalenderClient({
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => e.key === "Enter" && handleDayClick(day)}
-                className={`min-h-[82px] sm:min-h-[105px] rounded-card p-1.5 sm:p-2 border transition-all cursor-pointer flex flex-col justify-between relative group ${
-                  isToday
+                className={`min-h-[82px] sm:min-h-[105px] rounded-card p-1.5 sm:p-2 border transition-all cursor-pointer flex flex-col justify-between relative group ${isToday
                     ? "border-forest-900 ring-2 ring-forest-900/15 bg-lime-50/40 shadow-sm"
                     : isHoliday
-                    ? "bg-surface-muted/80 border-line/70 hover:border-line hover:bg-surface-muted"
-                    : "bg-surface border-line hover:border-forest-900/40 hover:shadow-xs"
-                }`}
+                      ? "bg-surface-muted/80 border-line/70 hover:border-line hover:bg-surface-muted"
+                      : "bg-surface border-line hover:border-forest-900/40 hover:shadow-xs"
+                  }`}
               >
                 {/* Header Sel: Nomor Tanggal & Indikator Status */}
                 <div className="flex items-start justify-between gap-1">
                   <span
-                    className={`w-6 h-6 flex items-center justify-center rounded-full text-[12px] sm:text-[13px] font-bold tabular-nums ${
-                      isToday
+                    className={`w-6 h-6 flex items-center justify-center rounded-full text-[12px] sm:text-[13px] font-bold tabular-nums ${isToday
                         ? "bg-forest-900 text-white shadow-xs"
                         : isHoliday
-                        ? "text-negative font-semibold"
-                        : "text-ink"
-                    }`}
+                          ? "text-negative font-semibold"
+                          : "text-ink"
+                      }`}
                   >
                     {dayNum}
                   </span>
@@ -711,11 +745,10 @@ export function KalenderClient({
               <div>
                 <div className="flex items-center gap-2">
                   <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill text-[11px] font-bold ${
-                      selectedDay.is_hari_kerja
+                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill text-[11px] font-bold ${selectedDay.is_hari_kerja
                         ? "bg-lime-100 text-positive"
                         : "bg-red-100 text-negative"
-                    }`}
+                      }`}
                   >
                     {selectedDay.is_hari_kerja ? (
                       <>
@@ -865,13 +898,12 @@ export function KalenderClient({
                           {formatNumber(entry.qty_disetujui || entry.qty)} pcs
                         </strong>
                         <p
-                          className={`text-[10px] font-medium capitalize ${
-                            entry.status === "disetujui"
+                          className={`text-[10px] font-medium capitalize ${entry.status === "disetujui"
                               ? "text-positive"
                               : entry.status === "menunggu"
-                              ? "text-amber-700"
-                              : "text-negative"
-                          }`}
+                                ? "text-amber-700"
+                                : "text-negative"
+                            }`}
                         >
                           {entry.status}
                         </p>
@@ -927,11 +959,10 @@ export function KalenderClient({
               <button
                 type="button"
                 onClick={() => setEditDayType("libur")}
-                className={`h-11 rounded-control border text-[13px] font-semibold transition flex items-center justify-center gap-1.5 ${
-                  editDayType === "libur"
+                className={`h-11 rounded-control border text-[13px] font-semibold transition flex items-center justify-center gap-1.5 ${editDayType === "libur"
                     ? "bg-red-50 border-red-300 text-negative font-bold ring-2 ring-red-200"
                     : "bg-surface-muted border-line text-muted hover:text-ink"
-                }`}
+                  }`}
               >
                 <CalendarX className="w-4 h-4" />
                 Hari Libur
@@ -940,11 +971,10 @@ export function KalenderClient({
               <button
                 type="button"
                 onClick={() => setEditDayType("kerja")}
-                className={`h-11 rounded-control border text-[13px] font-semibold transition flex items-center justify-center gap-1.5 ${
-                  editDayType === "kerja"
+                className={`h-11 rounded-control border text-[13px] font-semibold transition flex items-center justify-center gap-1.5 ${editDayType === "kerja"
                     ? "bg-lime-50 border-lime-300 text-positive font-bold ring-2 ring-lime-200"
                     : "bg-surface-muted border-line text-muted hover:text-ink"
-                }`}
+                  }`}
               >
                 <CalendarCheck className="w-4 h-4" />
                 Hari Kerja
@@ -1016,11 +1046,10 @@ export function KalenderClient({
                 <label
                   key={isoDay}
                   onClick={() => togglePatternDay(isoDay)}
-                  className={`flex items-center justify-between p-3 rounded-card border cursor-pointer select-none transition ${
-                    isChecked
+                  className={`flex items-center justify-between p-3 rounded-card border cursor-pointer select-none transition ${isChecked
                       ? "bg-surface border-forest-900 ring-1 ring-forest-900/10 shadow-2xs"
                       : "bg-surface-muted border-line opacity-70 hover:opacity-100"
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <input
@@ -1045,11 +1074,10 @@ export function KalenderClient({
                   </div>
 
                   <span
-                    className={`text-[11.5px] font-bold px-2 py-0.5 rounded-pill ${
-                      isChecked
+                    className={`text-[11.5px] font-bold px-2 py-0.5 rounded-pill ${isChecked
                         ? "bg-lime-100 text-positive"
                         : "bg-surface-muted text-muted"
-                    }`}
+                      }`}
                   >
                     {isChecked ? "Hari Kerja" : "Libur Rutin"}
                   </span>
