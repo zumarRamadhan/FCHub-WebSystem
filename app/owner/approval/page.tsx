@@ -1,13 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
 import { ApprovalClient, ApprovalEntryItem } from "./approval-client";
+import { EntryFlagItem } from "@/lib/types/database";
 
 export default async function OwnerApprovalPage({
   searchParams,
 }: {
-  searchParams?: { project?: string };
+  searchParams?: { project?: string; filter?: string };
 }) {
   const supabase = createClient();
   const initialProjectId = searchParams?.project || "all";
+  const initialFilter = searchParams?.filter || "all";
 
   // 1. Ambil antrean entri berstatus 'menunggu'
   const { data: rawEntries } = await supabase
@@ -53,6 +55,19 @@ export default async function OwnerApprovalPage({
     periode_selesai: string;
   }>;
 
+  // 4. Ambil tanda anomali (Tahap 16) via RPC get_entry_flags
+  const flagsMap: Record<string, EntryFlagItem> = {};
+  try {
+    const { data: rawFlags, error: flagsError } = await supabase.rpc("get_entry_flags");
+    if (!flagsError && rawFlags) {
+      (rawFlags as EntryFlagItem[]).forEach((flag) => {
+        flagsMap[flag.entry_id] = flag;
+      });
+    }
+  } catch {
+    // Graceful fallback jika RPC belum tersedia
+  }
+
   interface RawApprovalRow {
     id: string;
     user_id: string;
@@ -89,6 +104,7 @@ export default async function OwnerApprovalPage({
       qty: Number(e.qty),
       dibuat_pada: e.dibuat_pada,
       has_active_payment: hasActivePayment,
+      anomaly: flagsMap[e.id],
     };
   });
 
@@ -102,6 +118,8 @@ export default async function OwnerApprovalPage({
       initialEntries={entries}
       availableProjects={availableProjects}
       initialProjectId={initialProjectId}
+      initialFilter={initialFilter}
     />
   );
 }
+

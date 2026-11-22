@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Briefcase,
   FolderArchive,
+  AlertTriangle,
 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CardAccent } from "@/components/ui/card-accent";
@@ -32,7 +33,7 @@ import {
   estimateProjectCompletion,
   ProjectCompletionEstimate,
 } from "@/lib/wage";
-import { EntryStatus } from "@/lib/types/database";
+import { EntryStatus, EntryFlagItem } from "@/lib/types/database";
 import { DailyProductionChart, DailyProductionItem } from "@/components/dashboard/daily-production-chart";
 import { BelumInputCard, TailorItem } from "@/components/dashboard/belum-input-card";
 
@@ -261,6 +262,19 @@ export default async function OwnerDashboardPage({
   }
 
   const { count: waitingCount } = await waitingCountQuery;
+
+  // 3b. Query jumlah input bertanda anomali (Tahap 16)
+  let flaggedCount = 0;
+  try {
+    const { data: rawFlags, error: flagErr } = await supabase.rpc("get_entry_flags", {
+      p_project: isSingleProjectView && selectedProject ? selectedProject.project_id : null,
+    });
+    if (!flagErr && rawFlags) {
+      flaggedCount = (rawFlags as EntryFlagItem[]).filter((f) => f.tingkat !== "normal").length;
+    }
+  } catch {
+    // Graceful fallback
+  }
 
   // 4. Query antrean singkat approval (maks 4 entri)
   let waitingPreviewQuery = supabase
@@ -526,8 +540,8 @@ export default async function OwnerDashboardPage({
           ============================================================================== */}
       {isAllProjectsView && (
         <div className="space-y-6">
-          {/* A. 4 Kartu Ringkasan Akumulasi Lintas Proyek */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {/* A. 5 Kartu Ringkasan Akumulasi Lintas Proyek */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
             {/* 1. Proyek Aktif */}
             <Card className="p-4 sm:p-5 shadow-card flex flex-col justify-between">
               <div>
@@ -604,6 +618,41 @@ export default async function OwnerDashboardPage({
                 </Link>
               </div>
             </CardAccent>
+
+            {/* 5. Perlu Dicek / Tanda Anomali (Tahap 16) */}
+            <Card className="p-4 sm:p-5 shadow-card flex flex-col justify-between hover:border-amber-400 transition border-line">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-semibold text-muted uppercase tracking-wider">
+                    Perlu Dicek
+                  </span>
+                  {flaggedCount > 0 ? (
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-pill bg-amber-100 text-amber-800 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3 stroke-[2.2]" /> Perhatian
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-pill bg-surface-muted text-muted">
+                      Normal
+                    </span>
+                  )}
+                </div>
+                <strong className={`text-[26px] sm:text-[28px] font-bold leading-tight tabular-nums block ${
+                  flaggedCount > 0 ? "text-amber-800" : "text-ink"
+                }`}>
+                  {flaggedCount}{" "}
+                  <span className="text-[14px] font-normal text-muted">entri</span>
+                </strong>
+              </div>
+              <p className="text-[12px] text-muted mt-2 pt-2 border-t border-line/60 flex items-center justify-between">
+                <span>{flaggedCount > 0 ? "Angka tidak wajar" : "Semua input wajar"}</span>
+                <Link
+                  href="/owner/approval?filter=flagged"
+                  className="font-semibold text-forest-900 hover:underline flex items-center gap-0.5"
+                >
+                  Periksa →
+                </Link>
+              </p>
+            </Card>
           </div>
 
           {/* B. Grafik Tren Produksi 7 Hari & Status Setoran Penjahit */}
@@ -1004,46 +1053,73 @@ export default async function OwnerDashboardPage({
               </div>
             </Card>
 
-            {/* Kartu Lime: Antrean Approval Proyek Ini */}
-            <CardAccent className="lg:col-span-4 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-forest-900 text-white text-[11px] font-semibold">
-                    <Clock className="w-3.5 h-3.5" /> Antrean Proyek Ini
-                  </span>
-                  <span className="text-[12px] font-semibold text-forest-900/80 bg-forest-900/10 px-2.5 py-0.5 rounded-pill">
-                    Pagi Hari
-                  </span>
+            {/* Kolom Kanan: Antrean Approval & Perlu Dicek Proyek Ini */}
+            <div className="lg:col-span-4 flex flex-col gap-3.5">
+              <CardAccent className="flex-1 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-forest-900 text-white text-[11px] font-semibold">
+                      <Clock className="w-3.5 h-3.5" /> Antrean Proyek Ini
+                    </span>
+                    <span className="text-[12px] font-semibold text-forest-900/80 bg-forest-900/10 px-2.5 py-0.5 rounded-pill">
+                      Pagi Hari
+                    </span>
+                  </div>
+
+                  <h3 className="text-[18px] font-semibold text-forest-900 mb-1 leading-snug">
+                    Menunggu Approval
+                  </h3>
+                  <p className="text-[13px] text-forest-900/80 mb-3">
+                    Input penjahit untuk {selectedProject.nama_proyek} yang belum diverifikasi.
+                  </p>
+
+                  <div className="text-[34px] font-semibold text-forest-900 tabular-nums leading-none mb-1">
+                    {waitingCount || 0}{" "}
+                    <span className="text-[15px] font-medium opacity-80">entri</span>
+                  </div>
                 </div>
 
-                <h3 className="text-[18px] font-semibold text-forest-900 mb-1 leading-snug">
-                  Menunggu Approval
-                </h3>
-                <p className="text-[13px] text-forest-900/80 mb-4">
-                  Input penjahit untuk {selectedProject.nama_proyek} yang belum diverifikasi.
-                </p>
-
-                <div className="text-[36px] font-semibold text-forest-900 tabular-nums leading-none mb-2">
-                  {waitingCount || 0}{" "}
-                  <span className="text-[16px] font-medium opacity-80">entri</span>
+                <div className="pt-3 border-t border-forest-900/15 flex items-center justify-between">
+                  <span className="text-[12px] font-semibold text-forest-900">
+                    {waitingCount && waitingCount > 0
+                      ? "Buka Antrean Proyek Ini"
+                      : "Semua Terverifikasi"}
+                  </span>
+                  <Link href={`/owner/approval?project=${selectedProject.project_id}`}>
+                    <Button
+                      variant="accentAction"
+                      size="round36"
+                      aria-label="Ke antrean approval proyek ini"
+                    />
+                  </Link>
                 </div>
-              </div>
+              </CardAccent>
 
-              <div className="pt-4 border-t border-forest-900/15 flex items-center justify-between">
-                <span className="text-[12px] font-semibold text-forest-900">
-                  {waitingCount && waitingCount > 0
-                    ? "Buka Antrean Proyek Ini"
-                    : "Semua Terverifikasi"}
-                </span>
-                <Link href={`/owner/approval?project=${selectedProject.project_id}`}>
-                  <Button
-                    variant="accentAction"
-                    size="round36"
-                    aria-label="Ke antrean approval proyek ini"
-                  />
-                </Link>
-              </div>
-            </CardAccent>
+              {/* Kartu Perlu Dicek Proyek Ini (Tahap 16) */}
+              <Link
+                href={`/owner/approval?project=${selectedProject.project_id}&filter=flagged`}
+                className="block group"
+              >
+                <Card className="p-3.5 shadow-card hover:border-amber-400 transition bg-surface border-line">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                        <AlertTriangle className="w-4 h-4 stroke-[2.2]" />
+                      </div>
+                      <div>
+                        <span className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
+                          Perlu Dicek (Proyek Ini)
+                        </span>
+                        <span className="text-[13px] font-semibold text-ink group-hover:text-forest-900 transition">
+                          {flaggedCount > 0 ? `${flaggedCount} entri bertanda anomali` : "Tidak ada anomali"}
+                        </span>
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-muted group-hover:text-forest-900 group-hover:translate-x-0.5 transition" />
+                  </div>
+                </Card>
+              </Link>
+            </div>
           </div>
 
           {/* Tren Produksi Harian Proyek Ini + Status Setoran Penjahit */}

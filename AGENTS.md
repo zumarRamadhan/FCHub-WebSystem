@@ -92,6 +92,7 @@ Empat tabel utama. Rekap upah, progres proyek, dan leaderboard **dihitung dari `
 | `projects` | `id`, `nama`, `target_pcs`, `tarif_per_pcs`, `reward_aktif`, `ambang_reward`, `tanggal_mulai`, `deadline`, `status` |
 | `production_entries` | `id`, `user_id`, `project_id`, `tanggal_kerja`, `qty`, `qty_disetujui`, `tarif_snapshot`, `status` (`menunggu` / `disetujui` / `ditolak`), `catatan_owner`, `disetujui_oleh`, `disetujui_pada`, `dibuat_pada` |
 | `wage_payments` | `id`, `user_id`, `periode_mulai`, `periode_selesai`, `total_pcs`, `jumlah`, `rincian` (jsonb), `status` (`dibayar` / `dibatalkan`), `catatan`, `dibayar_oleh`, `dibayar_pada`, `dibatalkan_oleh`, `dibatalkan_pada`, `alasan_batal` |
+| `app_settings` | `key` (text pk), `value` (jsonb) — konfigurasi sistem terpusat (ambang anomali, target harian) |
 
 Catatan:
 
@@ -123,6 +124,7 @@ Aturan ini adalah inti sistem. Jangan dilanggar atau diubah tanpa persetujuan ek
 16. **Pengaturan reward (`reward_aktif`) diatur manual oleh owner** di setiap proyek dan bisa dinyalakan/dimatikan kapan saja, dengan default `false` untuk proyek baru. Tidak ada penentuan reward otomatis berdasarkan batas target pcs tertentu.
 17. **`ambang_reward` wajib diisi (> 0 dan <= `target_pcs`) hanya bila `reward_aktif = true`**. Bila `reward_aktif = false`, `ambang_reward` tidak wajib / bernilai 0.
 18. **Leaderboard untuk penjahit hanya menampilkan proyek bereward (`reward_aktif = true`)**; bila tidak ada proyek bereward aktif, penjahit melihat pesan ramah. Owner tetap melihat leaderboard untuk semua proyek.
+19. **Peringatan angka tidak wajar (anomali) hanya petunjuk untuk owner**: dihitung di sisi database dari entri berstatus `disetujui` (kecuali pengecekan tanggal masa depan dan duplikasi entri harian), dengan ambang batas terpusat di tabel `app_settings`. Peringatan ini **tidak pernah** menolak, mengubah status/qty secara otomatis, ataupun memengaruhi perhitungan upah. Penjahit tidak boleh melihat indikator tanda peringatan ini.
 
 Pertanyaan yang masih terbuka (jangan berasumsi di kode tanpa menandainya dengan `TODO(owner)`): apakah ada tahap kerja dengan tarif berbeda, apakah tarif sama untuk semua penjahit dalam satu proyek, apakah satu penjahit boleh input lebih dari sekali sehari.
 

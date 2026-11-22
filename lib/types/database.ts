@@ -272,3 +272,41 @@ export interface TailorWeeklyHistoryView {
   status_pembayaran: WeeklyWagePaymentStatus;
   tanggal_bayar_terakhir: string | null;
 }
+
+/**
+ * Tabel: public.app_settings (Tahap 16)
+ */
+export interface AppSetting {
+  key: string;
+  value: unknown;
+  updated_at: string;
+}
+
+/**
+ * Kode Alasan Anomali (Tahap 16)
+ */
+export type AnomalyReasonCode =
+  | "di_atas_kebiasaan"
+  | "sangat_tinggi"
+  | "total_harian_tinggi"
+  | "kemungkinan_ganda"
+  | "tanggal_masa_depan";
+
+export interface AnomalyReasonItem {
+  kode: AnomalyReasonCode;
+  judul: string;
+  deskripsi: string;
+}
+
+/**
+ * Hasil RPC: public.get_entry_flags (Tahap 16)
+ */
+export interface EntryFlagItem {
+  entry_id: string;
+  tingkat: "normal" | "perlu_dicek" | "sangat_tinggi";
+  alasan: AnomalyReasonItem[];
+  alasan_kode: AnomalyReasonCode[];
+  baseline: number;
+  rasio: number;
+}
+
