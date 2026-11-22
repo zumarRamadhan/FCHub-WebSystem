@@ -7,6 +7,7 @@
 export type UserRole = "owner" | "penjahit";
 export type ProjectStatus = "aktif" | "selesai" | "diarsipkan";
 export type EntryStatus = "menunggu" | "disetujui" | "ditolak";
+export type ProjectColorKey = "p1" | "p2" | "p3" | "p4" | "p5" | "p6" | "p7" | "p8";
 
 /**
  * Tabel: public.users (Profil Pengguna)
@@ -34,6 +35,7 @@ export interface DbProject {
   tarif_per_pcs: number;
   reward_aktif: boolean;
   ambang_reward: number;
+  warna: ProjectColorKey;
   tanggal_mulai: string; // YYYY-MM-DD
   deadline: string | null; // YYYY-MM-DD
   status: ProjectStatus;
@@ -44,6 +46,7 @@ export interface DbProject {
 export type DbProjectInsert = Omit<DbProject, "id" | "created_at" | "updated_at"> & {
   id?: string;
   ambang_reward?: number;
+  warna?: ProjectColorKey;
   status?: ProjectStatus;
 };
 
@@ -309,4 +312,45 @@ export interface EntryFlagItem {
   baseline: number;
   rasio: number;
 }
+
+/**
+ * Tabel: public.work_calendar (Tahap 17)
+ */
+export interface WorkCalendarEntry {
+  tanggal: string; // YYYY-MM-DD pk
+  jenis: "libur" | "kerja";
+  keterangan: string | null;
+  dibuat_oleh?: string | null;
+  dibuat_pada?: string;
+}
+
+/**
+ * Rincian Proyek Harian pada get_calendar_month (Tahap 17)
+ */
+export interface CalendarMonthProjectItem {
+  project_id: string;
+  nama_proyek: string;
+  warna: ProjectColorKey;
+  pcs_disetujui: number;
+  pcs_menunggu: number;
+  jumlah_penjahit: number;
+  is_deadline: boolean;
+  is_lembur: boolean;
+}
+
+/**
+ * Hasil RPC: public.get_calendar_month (Tahap 17)
+ */
+export interface CalendarMonthDay {
+  tanggal: string; // YYYY-MM-DD
+  is_hari_kerja: boolean;
+  sumber_status: "kalender" | "pola";
+  keterangan_libur: string | null;
+  proyek_produksi: CalendarMonthProjectItem[];
+  total_pcs_disetujui: number;
+  total_pcs_menunggu: number;
+  total_penjahit: number;
+  ada_lembur: boolean;
+}
+
 

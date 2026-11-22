@@ -46,6 +46,26 @@ Pemetaan status input:
 
 Kontras: teks di atas `lime-500` selalu `forest-900`, bukan putih.
 
+### Palet Warna Proyek (Pengecualian Terbatas Satu Aksen)
+
+Sebagai **pengecualian terbatas** dari prinsip satu aksen hijau lime, FCHub menyediakan palet 8 warna harmonis khusus untuk membedakan indikator multi-proyek (titik kalender, bar garis waktu/timeline, badge kartu proyek, dan chip filter). Indikator tidak boleh hanya mengandalkan warna semata (a11y), melainkan selalu disertai nama lengkap atau inisial proyek.
+
+| Kunci | Nama | Hex Utama | Latar Badge | Border | Pemakaian |
+| --- | --- | --- | --- | --- | --- |
+| `p1` | Biru Laut (Ocean) | `#2563EB` | `#EFF6FF` | `#BFDBFE` | Proyek tas ransel / sekolah |
+| `p2` | Hijau Zamrud (Emerald) | `#059669` | `#ECFDF5` | `#A7F3D0` | Proyek totebag instansi |
+| `p3` | Kuning Kunyit (Amber) | `#D97706` | `#FFFBEB` | `#FDE68A` | Proyek tas souvenir / seminar |
+| `p4` | Ungu Violet (Purple) | `#7C3AED` | `#F5F3FF` | `#DDD6FE` | Proyek pouch / dompet kain |
+| `p5` | Merah Mawar (Rose) | `#E11D48` | `#FFF1F2` | `#FECDD3` | Proyek tas belanja / grocery |
+| `p6` | Biru Kehijauan (Cyan) | `#0891B2` | `#ECFEFF` | `#A5F3FC` | Proyek tas promosi UMKM |
+| `p7` | Jingga Bata (Orange) | `#EA580C` | `#FFF7ED` | `#FED7AA` | Proyek tas spunbond / custom |
+| `p8` | Nila Tua (Indigo) | `#4F46E5` | `#EEF2FF` | `#C7D2FE` | Proyek tas kanvas / premium |
+
+Aturan visual:
+- Proyek baru otomatis mendapatkan warna yang paling jarang dipakai di antara proyek yang ada.
+- Pada kalender, jika ada lebih dari 4 proyek berproduksi di hari yang sama, tampilkan 4 titik pertama dan sisanya badge `+n`.
+- Garis waktu horizontal di HP dapat digeser secara mulus (touch scroll) dengan penanda garis vertikal "Hari Ini".
+
 ### Tipografi
 
 - Font: **Plus Jakarta Sans** (alternatif: Urbanist, Outfit) lewat `next/font/google`.

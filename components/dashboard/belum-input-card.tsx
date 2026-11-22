@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { UserX, CheckCircle, Calendar, Users } from "lucide-react";
+import { UserX, CheckCircle, Calendar, Users, CalendarX } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { formatDateId } from "@/lib/format";
 
@@ -17,6 +17,10 @@ interface BelumInputCardProps {
   yesterdayDateStr: string; // YYYY-MM-DD
   todaySubmittedUserIds: string[];
   yesterdaySubmittedUserIds: string[];
+  isTodayHoliday?: boolean;
+  todayHolidayLabel?: string;
+  isYesterdayHoliday?: boolean;
+  yesterdayHolidayLabel?: string;
 }
 
 export function BelumInputCard({
@@ -25,12 +29,18 @@ export function BelumInputCard({
   yesterdayDateStr,
   todaySubmittedUserIds,
   yesterdaySubmittedUserIds,
+  isTodayHoliday = false,
+  todayHolidayLabel,
+  isYesterdayHoliday = false,
+  yesterdayHolidayLabel,
 }: BelumInputCardProps) {
   const [selectedDay, setSelectedDay] = useState<"today" | "yesterday">("today");
 
   const currentDateStr = selectedDay === "today" ? todayDateStr : yesterdayDateStr;
   const submittedIds =
     selectedDay === "today" ? todaySubmittedUserIds : yesterdaySubmittedUserIds;
+  const isCurrentHoliday = selectedDay === "today" ? Boolean(isTodayHoliday) : Boolean(isYesterdayHoliday);
+  const currentHolidayLabel = selectedDay === "today" ? todayHolidayLabel : yesterdayHolidayLabel;
 
   // Filter penjahit yang belum menyetor entri sama sekali pada tanggal terpilih
   const unsubmittedTailors = tailors.filter((t) => !submittedIds.includes(t.id));
@@ -84,6 +94,22 @@ export function BelumInputCard({
           </div>
         </div>
 
+        {/* Banner Hari Libur Konveksi bila tanggal terpilih adalah hari libur */}
+        {isCurrentHoliday && (
+          <div className="mb-3 p-2.5 rounded-card bg-amber-50/80 border border-amber-200 text-amber-900 text-[12px] flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <CalendarX className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>
+                <strong>Hari libur konveksi</strong> {currentHolidayLabel ? `(${currentHolidayLabel})` : ""}.
+                {submittedCount > 0 ? ` ${submittedCount} penjahit lembur.` : " Penjahit tidak dijadwalkan bekerja."}
+              </span>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-pill bg-amber-200/80 text-amber-900 shrink-0">
+              Libur
+            </span>
+          </div>
+        )}
+
         {/* Ringkasan Jumlah */}
         <div className="flex items-center justify-between bg-surface-muted/60 rounded-card p-3 mb-3 border border-line/50">
           <div className="flex items-center gap-2 text-[13px]">
@@ -92,9 +118,17 @@ export function BelumInputCard({
             <strong className="text-ink tabular-nums">{totalTailors} orang</strong>
           </div>
           <div className="text-[13px]">
-            {unsubmittedCount === 0 ? (
+            {isCurrentHoliday && submittedCount === 0 ? (
+              <span className="inline-flex items-center gap-1 font-semibold text-muted">
+                Hari libur konveksi
+              </span>
+            ) : unsubmittedCount === 0 ? (
               <span className="inline-flex items-center gap-1 font-semibold text-positive">
                 <CheckCircle className="w-3.5 h-3.5" /> Lengkap (100%)
+              </span>
+            ) : isCurrentHoliday ? (
+              <span className="font-semibold text-amber-800 tabular-nums">
+                <span className="font-bold">{submittedCount}</span> lembur
               </span>
             ) : (
               <span className="font-semibold text-ink tabular-nums">
@@ -104,8 +138,20 @@ export function BelumInputCard({
           </div>
         </div>
 
-        {/* Konten Daftar Penjahit Belum Input */}
-        {unsubmittedCount === 0 ? (
+        {/* Konten Daftar Penjahit Belum Input / Libur */}
+        {isCurrentHoliday && submittedCount === 0 ? (
+          <div className="py-6 text-center text-muted">
+            <div className="w-10 h-10 rounded-full bg-surface-muted text-muted mx-auto flex items-center justify-center mb-2 border border-line">
+              <CalendarX className="w-5 h-5 text-muted" />
+            </div>
+            <p className="text-[13px] font-semibold text-ink">
+              Hari libur konveksi
+            </p>
+            <p className="text-[11.5px] text-muted mt-0.5 max-w-xs mx-auto">
+              {currentHolidayLabel || "Hari libur rutin konveksi."} Tidak ada kewajiban setor input harian.
+            </p>
+          </div>
+        ) : unsubmittedCount === 0 ? (
           <div className="py-6 text-center text-muted">
             <div className="w-10 h-10 rounded-full bg-lime-100 text-positive mx-auto flex items-center justify-center mb-2">
               <CheckCircle className="w-5 h-5" />

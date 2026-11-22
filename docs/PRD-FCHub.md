@@ -101,6 +101,7 @@ Owner memakai FCHub terutama untuk approval harian dan rekap upah mingguan.
 | O10 | Riwayat perubahan lengkap: siapa mengubah apa dan kapan | Setelah demo |
 | O11 | Pencatatan status pembayaran tunai mingguan: tandai lunas (atomik dengan advisory lock), rincian snapshot per proyek, serta pembatalan dengan alasan wajib | Demo |
 | O12 | Deteksi & peringatan angka tidak wajar (anomali) di antrean approval: di atas kebiasaan, total harian tinggi, kemungkinan ganda, dan tanggal di masa depan sebagai petunjuk owner | Demo |
+| O13 | Kalender kerja dan garis waktu multi-proyek: penanda hari libur, deteksi kerja lembur, dan kode warna proyek 8 varian untuk memantau produksi harian | Demo |
 
 ## Aturan bisnis
 Aturan berikut menggantikan fungsi buku owner dan mencegah sengketa upah.
@@ -119,17 +120,19 @@ Aturan berikut menggantikan fungsi buku owner dan mencegah sengketa upah.
 - "Tandai dibayar" membayar SISA (`upah_saat_ini` - total pembayaran aktif) secara atomik dengan database advisory lock. Tidak ada pembayaran nominal bebas.
 - Hanya owner yang boleh membuat atau membatalkan pembayaran; penjahit hanya melihat status dan catatan miliknya.
 - Peringatan angka tidak wajar (anomali) pada antrean approval hanya berfungsi sebagai petunjuk visual bagi owner (dihitung di database dari entri disetujui, ambang batas terpusat di `app_settings`), tidak pernah otomatis menolak/mengubah qty atau memengaruhi upah. Penjahit tidak dapat melihat tanda anomali.
+- Hari kerja dihitung dari pola mingguan terpusat di `app_settings` (default Senin-Sabtu) ditambah pengecualian tanggal di `work_calendar`. Input pada hari libur tetap diterima dan dicatat sebagai lembur. Perkiraan selesai proyek dan penentuan penjahit belum input melompati hari libur via fungsi database `is_hari_kerja` & `hitung_hari_kerja`. Setiap proyek memiliki warna dari 8 palet (`p1` s.d. `p8`) yang selalu disertai nama/inisial proyek. Kalender kerja tidak mengubah rumus upah.
 
 ## Model data
-Model data memiliki empat tabel utama ditambah satu tabel konfigurasi aplikasi. Rekap upah, progres proyek, dan leaderboard dihitung dari tabel input, sedangkan pembayaran tunai dicatat di tabel pembayaran.
+Model data memiliki empat tabel utama ditambah tabel pendukung konfigurasi dan kalender kerja. Rekap upah, progres proyek, dan leaderboard dihitung dari tabel input, sedangkan pembayaran tunai dicatat di tabel pembayaran.
 
 | Tabel | Field utama | Catatan |
 | --- | --- | --- |
 | users | id, nama, username, pin_hash, role (owner atau penjahit), aktif | Role menentukan hak akses |
-| projects | id, nama, target_pcs, tarif_per_pcs, reward_aktif, ambang_reward, tanggal_mulai, deadline, status | Satu proyek bisa berjalan bersamaan dengan proyek lain. reward_aktif menentukan apakah proyek memiliki kompetisi & reward |
+| projects | id, nama, target_pcs, tarif_per_pcs, reward_aktif, ambang_reward, warna, tanggal_mulai, deadline, status | Satu proyek bisa berjalan bersamaan dengan proyek lain. warna memakai palet p1..p8 |
 | production_entries | id, user_id, project_id, tanggal_kerja, qty, qty_disetujui, tarif_snapshot, status (menunggu, disetujui, ditolak), catatan_owner, disetujui_oleh, disetujui_pada, dibuat_pada | qty adalah angka dari penjahit; qty_disetujui adalah angka akhir setelah koreksi owner |
 | wage_payments | id, user_id, periode_mulai, periode_selesai, total_pcs, jumlah, rincian (jsonb), status (dibayar, dibatalkan), catatan, dibayar_oleh, dibayar_pada, dibatalkan_oleh, dibatalkan_pada, alasan_batal | Catatan pembayaran tunai mingguan dengan snapshot nilai saat dibayar |
-| app_settings | key (text pk), value (jsonb) | Konfigurasi sistem terpusat (ambang rasio anomali, minimal sampel, target harian) |
+| app_settings | key (text pk), value (jsonb) | Konfigurasi sistem terpusat (ambang rasio anomali, minimal sampel, target harian, pola hari_kerja) |
+| work_calendar | tanggal (date pk), jenis (libur/kerja), keterangan, dibuat_oleh, dibuat_pada | Kalender kerja dan daftar hari libur konveksi |
 
 Satu penjahit punya banyak input, dan satu proyek punya banyak input. Upah dihitung dari qty_disetujui × tarif_snapshot pada input berstatus disetujui.
 

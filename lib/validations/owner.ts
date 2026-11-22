@@ -23,6 +23,9 @@ export const projectSchema = z
       .int("Ambang reward harus berupa bilangan bulat")
       .min(0, "Ambang reward minimal 0")
       .default(0),
+    warna: z
+      .enum(["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"])
+      .default("p1"),
     tanggal_mulai: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, "Format tanggal mulai harus YYYY-MM-DD"),

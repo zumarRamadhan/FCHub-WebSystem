@@ -9,6 +9,7 @@ import {
   FileSpreadsheet,
   Briefcase,
   Users,
+  Calendar,
   LogOut,
   Shield,
 } from "lucide-react";
@@ -25,6 +26,7 @@ const ownerNavItems = [
   { href: "/owner/approval", label: "Approval", icon: CheckSquare },
   { href: "/owner/rekap", label: "Rekap Upah", icon: FileSpreadsheet },
   { href: "/owner/proyek", label: "Proyek", icon: Briefcase },
+  { href: "/owner/kalender", label: "Kalender", icon: Calendar },
   { href: "/owner/penjahit", label: "Penjahit", icon: Users },
 ];
 
@@ -167,10 +169,10 @@ export default function OwnerLayout({ children }: OwnerLayoutProps) {
         {children}
       </main>
 
-      {/* Mobile Bottom Navigation (5 Item) */}
+      {/* Mobile Bottom Navigation (6 Item) */}
       <nav
         aria-label="Navigasi bawah owner"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-surface border-t border-line/80 rounded-t-[24px] shadow-[0_-4px_20px_rgba(15,26,18,0.06)] h-16 max-w-lg mx-auto flex items-center justify-around px-1"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-surface border-t border-line/80 rounded-t-[24px] shadow-[0_-4px_20px_rgba(15,26,18,0.06)] h-16 max-w-lg mx-auto flex items-center justify-between px-1"
       >
         {ownerNavItems.map((item) => {
           const isActive =
@@ -183,7 +185,7 @@ export default function OwnerLayout({ children }: OwnerLayoutProps) {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 px-1.5 rounded-pill transition-all duration-150 relative ${
+              className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 px-0.5 rounded-pill transition-all duration-150 relative ${
                 isActive
                   ? "bg-lime-500 text-forest-900 font-semibold scale-105"
                   : "text-muted hover:text-ink"
@@ -197,7 +199,7 @@ export default function OwnerLayout({ children }: OwnerLayoutProps) {
                   </span>
                 )}
               </div>
-              <span className="text-[10px] leading-tight mt-0.5 font-medium truncate max-w-[56px]">
+              <span className="text-[9.5px] leading-tight mt-0.5 font-medium truncate max-w-full">
                 {item.label}
               </span>
             </Link>

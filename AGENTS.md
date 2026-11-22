@@ -89,10 +89,11 @@ Empat tabel utama. Rekap upah, progres proyek, dan leaderboard **dihitung dari `
 | Tabel | Field utama |
 | --- | --- |
 | `users` | `id`, `nama`, `username`, `role` (`owner` / `penjahit`), `aktif` |
-| `projects` | `id`, `nama`, `target_pcs`, `tarif_per_pcs`, `reward_aktif`, `ambang_reward`, `tanggal_mulai`, `deadline`, `status` |
+| `projects` | `id`, `nama`, `target_pcs`, `tarif_per_pcs`, `reward_aktif`, `ambang_reward`, `warna`, `tanggal_mulai`, `deadline`, `status` |
 | `production_entries` | `id`, `user_id`, `project_id`, `tanggal_kerja`, `qty`, `qty_disetujui`, `tarif_snapshot`, `status` (`menunggu` / `disetujui` / `ditolak`), `catatan_owner`, `disetujui_oleh`, `disetujui_pada`, `dibuat_pada` |
 | `wage_payments` | `id`, `user_id`, `periode_mulai`, `periode_selesai`, `total_pcs`, `jumlah`, `rincian` (jsonb), `status` (`dibayar` / `dibatalkan`), `catatan`, `dibayar_oleh`, `dibayar_pada`, `dibatalkan_oleh`, `dibatalkan_pada`, `alasan_batal` |
-| `app_settings` | `key` (text pk), `value` (jsonb) — konfigurasi sistem terpusat (ambang anomali, target harian) |
+| `app_settings` | `key` (text pk), `value` (jsonb) — konfigurasi sistem terpusat (ambang anomali, target harian, pola hari_kerja) |
+| `work_calendar` | `tanggal` (date pk), `jenis` (`libur` / `kerja`), `keterangan` (text), `dibuat_oleh`, `dibuat_pada` — hari libur dan pengecualian kalender |
 
 Catatan:
 
@@ -125,6 +126,12 @@ Aturan ini adalah inti sistem. Jangan dilanggar atau diubah tanpa persetujuan ek
 17. **`ambang_reward` wajib diisi (> 0 dan <= `target_pcs`) hanya bila `reward_aktif = true`**. Bila `reward_aktif = false`, `ambang_reward` tidak wajib / bernilai 0.
 18. **Leaderboard untuk penjahit hanya menampilkan proyek bereward (`reward_aktif = true`)**; bila tidak ada proyek bereward aktif, penjahit melihat pesan ramah. Owner tetap melihat leaderboard untuk semua proyek.
 19. **Peringatan angka tidak wajar (anomali) hanya petunjuk untuk owner**: dihitung di sisi database dari entri berstatus `disetujui` (kecuali pengecekan tanggal masa depan dan duplikasi entri harian), dengan ambang batas terpusat di tabel `app_settings`. Peringatan ini **tidak pernah** menolak, mengubah status/qty secara otomatis, ataupun memengaruhi perhitungan upah. Penjahit tidak boleh melihat indikator tanda peringatan ini.
+20. **Kalender kerja dan warna indikator proyek**:
+   - Hari kerja dihitung berdasarkan pola mingguan (default Senin sampai Sabtu / `[1,2,3,4,5,6]` di `app_settings`, tandai `TODO(owner)`: konfirmasi apakah Sabtu penuh atau setengah hari) ditambah daftar pengecualian tanggal di tabel `work_calendar`.
+   - Input penjahit pada hari libur **tetap diterima** dan ditandai sebagai kerja lembur, tidak pernah diblokir atau membatalkan entri.
+   - Perkiraan selesai proyek dan penentuan penjahit "belum input" wajib memakai satu sumber kebenaran fungsi database (`is_hari_kerja` dan `hitung_hari_kerja`), melompati hari libur.
+   - Setiap proyek memiliki warna indikator dari palet terbatas 8 warna (`p1` sampai `p8`) yang disimpan di `projects.warna`. Indikator visual tidak boleh hanya mengandalkan warna, melainkan selalu disertai nama atau inisial proyek.
+   - Kalender kerja dan penanda lembur **tidak memengaruhi rumus upah** (tetap `qty_disetujui × tarif_snapshot`).
 
 Pertanyaan yang masih terbuka (jangan berasumsi di kode tanpa menandainya dengan `TODO(owner)`): apakah ada tahap kerja dengan tarif berbeda, apakah tarif sama untuk semua penjahit dalam satu proyek, apakah satu penjahit boleh input lebih dari sekali sehari.
 

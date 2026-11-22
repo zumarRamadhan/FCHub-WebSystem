@@ -12,6 +12,7 @@ import {
   Briefcase,
   FolderArchive,
   AlertTriangle,
+  Calendar,
 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CardAccent } from "@/components/ui/card-accent";
@@ -33,7 +34,8 @@ import {
   estimateProjectCompletion,
   ProjectCompletionEstimate,
 } from "@/lib/wage";
-import { EntryStatus, EntryFlagItem } from "@/lib/types/database";
+import { EntryStatus, EntryFlagItem, ProjectColorKey } from "@/lib/types/database";
+import { getProjectColor, getProjectInitials } from "@/lib/project-colors";
 import { DailyProductionChart, DailyProductionItem } from "@/components/dashboard/daily-production-chart";
 import { BelumInputCard, TailorItem } from "@/components/dashboard/belum-input-card";
 
@@ -44,6 +46,7 @@ interface ProjectProgressRow {
   tarif_per_pcs: number;
   reward_aktif?: boolean;
   ambang_reward: number;
+  warna?: ProjectColorKey;
   status_proyek: string;
   tanggal_mulai: string;
   deadline: string;
@@ -154,14 +157,16 @@ export default async function OwnerDashboardPage({
     .order("status_proyek", { ascending: true }) // 'aktif' first
     .order("tanggal_mulai", { ascending: false });
 
-  // Ambil status reward_aktif dari tabel projects
+  // Ambil status reward_aktif dan warna dari tabel projects
   const { data: rawProjectsTable } = await supabase
     .from("projects")
-    .select("id, reward_aktif");
+    .select("id, reward_aktif, warna");
 
   const rewardAktifMap: Record<string, boolean> = {};
+  const projectColorMap: Record<string, ProjectColorKey> = {};
   (rawProjectsTable || []).forEach((p) => {
     rewardAktifMap[p.id] = Boolean(p.reward_aktif);
+    projectColorMap[p.id] = (p.warna || "p1") as ProjectColorKey;
   });
 
   const allProjects: ProjectProgressRow[] = (rawProjects || []).map((p) => ({
@@ -170,6 +175,7 @@ export default async function OwnerDashboardPage({
     target_pcs: Number(p.target_pcs || 0),
     tarif_per_pcs: Number(p.tarif_per_pcs || 500),
     reward_aktif: rewardAktifMap[p.project_id] ?? false,
+    warna: projectColorMap[p.project_id] || "p1",
     ambang_reward: Number(p.ambang_reward || 0),
     status_proyek: p.status_proyek || "aktif",
     tanggal_mulai: p.tanggal_mulai,
@@ -391,18 +397,56 @@ export default async function OwnerDashboardPage({
     )
   );
 
-  // D. Hitung estimasi selesai untuk setiap proyek aktif
-  const projectEstimatesMap: Record<string, ProjectCompletionEstimate> = {};
-  allProjects.forEach((p) => {
-    const projectEntries = entries7Hari.filter((e) => e.project_id === p.project_id);
-    projectEstimatesMap[p.project_id] = estimateProjectCompletion({
-      targetPcs: p.target_pcs,
-      totalPcsDisetujui: p.total_pcs_disetujui,
-      deadline: p.deadline,
-      todayDateStr,
-      entries7Hari: projectEntries,
-    });
-  });
+  // Evaluasi hari kerja hari ini & kemarin via fungsi database is_hari_kerja (Aturan Bisnis #20)
+  const [isTodayWorkRes, isYesterdayWorkRes] = await Promise.all([
+    supabase.rpc("is_hari_kerja", { p_tanggal: todayDateStr }),
+    supabase.rpc("is_hari_kerja", { p_tanggal: yesterdayDateStr }),
+  ]);
+  const isTodayWork = isTodayWorkRes.data !== false;
+  const isYesterdayWork = isYesterdayWorkRes.data !== false;
+
+  const { data: holidayNotes } = await supabase
+    .from("work_calendar")
+    .select("tanggal, keterangan, jenis")
+    .in("tanggal", [todayDateStr, yesterdayDateStr]);
+
+  const todayHolidayEntry = holidayNotes?.find((h) => h.tanggal === todayDateStr && h.jenis === "libur");
+  const yesterdayHolidayEntry = holidayNotes?.find((h) => h.tanggal === yesterdayDateStr && h.jenis === "libur");
+
+  // D. Hitung estimasi selesai untuk setiap proyek aktif dengan hari kerja database (hitung_hari_kerja)
+  const projectEstimatesMap: Record<
+    string,
+    ProjectCompletionEstimate & { sisaHariKerjaDeadline?: number }
+  > = {};
+
+  await Promise.all(
+    allProjects.map(async (p) => {
+      const projectEntries = entries7Hari.filter((e) => e.project_id === p.project_id);
+      const est = estimateProjectCompletion({
+        targetPcs: p.target_pcs,
+        totalPcsDisetujui: p.total_pcs_disetujui,
+        deadline: p.deadline,
+        todayDateStr,
+        entries7Hari: projectEntries,
+      });
+
+      let sisaHariKerja: number | undefined = undefined;
+      if (p.deadline && est.statusDeadline !== "selesai") {
+        const { data: workDays } = await supabase.rpc("hitung_hari_kerja", {
+          p_mulai: todayDateStr,
+          p_selesai: p.deadline,
+        });
+        if (workDays !== null && workDays !== undefined) {
+          sisaHariKerja = Number(workDays);
+        }
+      }
+
+      projectEstimatesMap[p.project_id] = {
+        ...est,
+        sisaHariKerjaDeadline: sisaHariKerja,
+      };
+    })
+  );
 
   // E. Siapkan data grafik 7 hari harian untuk cakupan yang dipilih
   const dayNamesShort = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
@@ -451,13 +495,21 @@ export default async function OwnerDashboardPage({
           </p>
         </div>
 
-        {/* Tautan Cepat Kelola Proyek */}
-        <Link href="/owner/proyek" className="shrink-0">
-          <Button variant="secondary" size="sm" className="h-9 px-3.5 text-[12px]">
-            <Briefcase className="w-3.5 h-3.5 mr-1.5" />
-            Kelola Proyek
-          </Button>
-        </Link>
+        {/* Tautan Cepat Kelola Proyek & Kalender Kerja */}
+        <div className="flex items-center gap-2">
+          <Link href="/owner/kalender" className="shrink-0">
+            <Button variant="secondary" size="sm" className="h-9 px-3.5 text-[12px]">
+              <Calendar className="w-3.5 h-3.5 mr-1.5" />
+              Kalender Kerja
+            </Button>
+          </Link>
+          <Link href="/owner/proyek" className="shrink-0">
+            <Button variant="secondary" size="sm" className="h-9 px-3.5 text-[12px]">
+              <Briefcase className="w-3.5 h-3.5 mr-1.5" />
+              Kelola Proyek
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Baris Chip Selector Horizontal */}
@@ -488,6 +540,7 @@ export default async function OwnerDashboardPage({
           const pct = Math.min(100, Math.round(Number(p.persentase_progres || 0)));
           const shortName =
             p.nama_proyek.length > 20 ? p.nama_proyek.slice(0, 18) + "…" : p.nama_proyek;
+          const pColor = getProjectColor(p.warna);
 
           return (
             <Link
@@ -499,7 +552,7 @@ export default async function OwnerDashboardPage({
                   : "bg-surface border border-line text-muted hover:text-ink hover:border-forest-900/30"
               }`}
             >
-              <Package className="w-3.5 h-3.5" />
+              <span className={`w-2 h-2 rounded-full ${pColor.dotClass}`} />
               <span>{shortName}</span>
               <span
                 className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold tabular-nums ${
@@ -671,6 +724,10 @@ export default async function OwnerDashboardPage({
                 yesterdayDateStr={yesterdayDateStr}
                 todaySubmittedUserIds={todaySubmittedUserIds}
                 yesterdaySubmittedUserIds={yesterdaySubmittedUserIds}
+                isTodayHoliday={!isTodayWork}
+                todayHolidayLabel={todayHolidayEntry?.keterangan || (!isTodayWork ? "Libur mingguan konveksi" : undefined)}
+                isYesterdayHoliday={!isYesterdayWork}
+                yesterdayHolidayLabel={yesterdayHolidayEntry?.keterangan || (!isYesterdayWork ? "Libur mingguan konveksi" : undefined)}
               />
             </div>
           </div>
@@ -714,9 +771,12 @@ export default async function OwnerDashboardPage({
                           {/* Header Kartu Proyek */}
                           <div className="flex items-start justify-between gap-2 mb-2.5">
                             <div className="min-w-0">
-                              <h3 className="text-[15px] font-semibold text-ink leading-snug group-hover:text-forest-900 transition-colors truncate">
-                                {p.nama_proyek}
-                              </h3>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`w-2.5 h-2.5 rounded-full ${getProjectColor(p.warna).dotClass} shrink-0`} />
+                                <h3 className="text-[15px] font-semibold text-ink leading-snug group-hover:text-forest-900 transition-colors truncate">
+                                  {p.nama_proyek}
+                                </h3>
+                              </div>
                               <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                                 <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-bold">
                                   {formatRupiah(p.tarif_per_pcs)} / pcs
@@ -766,6 +826,11 @@ export default async function OwnerDashboardPage({
                                 }`}
                               >
                                 {deadlineInfo.label}
+                                {estimate?.sisaHariKerjaDeadline !== undefined && !deadlineInfo.isLate && (
+                                  <span className="text-muted font-normal ml-1">
+                                    ({estimate.sisaHariKerjaDeadline} hr kerja)
+                                  </span>
+                                )}
                               </span>
                             </div>
                             <p className="text-[10px] text-muted/70 italic text-right pt-0.5">
@@ -944,7 +1009,7 @@ export default async function OwnerDashboardPage({
           {/* Banner Cakupan Proyek */}
           <div className="flex items-center justify-between p-3.5 bg-surface rounded-card border border-line">
             <div className="flex items-center gap-2">
-              <Package className="w-4 h-4 text-forest-900" />
+              <span className={`w-3 h-3 rounded-full ${getProjectColor(selectedProject.warna).dotClass} shrink-0`} />
               <span className="text-[13px] font-semibold text-ink">
                 Cakupan: {selectedProject.nama_proyek}
               </span>
@@ -963,7 +1028,13 @@ export default async function OwnerDashboardPage({
             <Card className="lg:col-span-8 flex flex-col justify-between p-5 sm:p-6 shadow-card">
               <div>
                 <CardHeader
-                  icon={<Package className="w-5 h-5 text-forest-900" />}
+                  icon={
+                    <div
+                      className={`w-7 h-7 rounded-[8px] ${getProjectColor(selectedProject.warna).bgClass} border ${getProjectColor(selectedProject.warna).borderClass} flex items-center justify-center ${getProjectColor(selectedProject.warna).textClass} font-bold text-[11px] shadow-2xs`}
+                    >
+                      {getProjectInitials(selectedProject.nama_proyek)}
+                    </div>
+                  }
                   title={selectedProject.nama_proyek}
                   subtitle={`Target Pesanan: ${formatNumber(selectedProject.target_pcs)} pcs`}
                   action={
@@ -988,7 +1059,12 @@ export default async function OwnerDashboardPage({
                       {formatRupiah(selectedProject.tarif_per_pcs)} / pcs
                     </strong>{" "}
                     · Deadline: {formatDateId(selectedProject.deadline)} (
-                    {getDeadlineStatus(selectedProject.deadline).label})
+                    {getDeadlineStatus(selectedProject.deadline).label}
+                    {projectEstimatesMap[selectedProject.project_id]?.sisaHariKerjaDeadline !== undefined &&
+                      !getDeadlineStatus(selectedProject.deadline).isLate && (
+                        <span> · {projectEstimatesMap[selectedProject.project_id].sisaHariKerjaDeadline} hari kerja</span>
+                      )}
+                    )
                   </p>
 
                   {/* Box Perkiraan Selesai & Tren 7 Hari */}
@@ -1138,6 +1214,10 @@ export default async function OwnerDashboardPage({
                 yesterdayDateStr={yesterdayDateStr}
                 todaySubmittedUserIds={todaySubmittedUserIds}
                 yesterdaySubmittedUserIds={yesterdaySubmittedUserIds}
+                isTodayHoliday={!isTodayWork}
+                todayHolidayLabel={todayHolidayEntry?.keterangan || (!isTodayWork ? "Libur mingguan konveksi" : undefined)}
+                isYesterdayHoliday={!isYesterdayWork}
+                yesterdayHolidayLabel={yesterdayHolidayEntry?.keterangan || (!isYesterdayWork ? "Libur mingguan konveksi" : undefined)}
               />
             </div>
           </div>

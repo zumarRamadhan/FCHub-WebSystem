@@ -17,6 +17,12 @@ import { Dialog } from "@/components/ui/dialog";
 import { formatNumber, formatRupiah, formatDateId, getJakartaTodayString } from "@/lib/format";
 import { createProjectAction, updateProjectAction } from "./actions";
 import { ProjectInput } from "@/lib/validations/owner";
+import { ProjectColorKey } from "@/lib/types/database";
+import {
+  getProjectColor,
+  getProjectInitials,
+  PROJECT_COLOR_LIST,
+} from "@/lib/project-colors";
 
 export interface ProjectItem {
   id: string;
@@ -25,6 +31,7 @@ export interface ProjectItem {
   tarif_per_pcs: number;
   reward_aktif?: boolean;
   ambang_reward: number;
+  warna?: ProjectColorKey;
   tanggal_mulai: string;
   deadline: string | null;
   status: "aktif" | "selesai" | "diarsipkan";
@@ -49,6 +56,7 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
   const [tarifPerPcs, setTarifPerPcs] = React.useState<number>(500);
   const [rewardAktif, setRewardAktif] = React.useState<boolean>(false);
   const [ambangReward, setAmbangReward] = React.useState<number>(0);
+  const [warna, setWarna] = React.useState<ProjectColorKey>("p1");
   const [tanggalMulai, setTanggalMulai] = React.useState(getJakartaTodayString());
   const [deadline, setDeadline] = React.useState("");
   const [status, setStatus] = React.useState<"aktif" | "selesai" | "diarsipkan">("aktif");
@@ -67,6 +75,16 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
     setTarifPerPcs(500);
     setRewardAktif(false);
     setAmbangReward(0);
+    // Cari warna yang belum banyak dipakai di proyek saat ini
+    const usedCounts: Record<string, number> = {};
+    projects.forEach((p) => {
+      const w = p.warna || "p1";
+      usedCounts[w] = (usedCounts[w] || 0) + 1;
+    });
+    const leastUsed = PROJECT_COLOR_LIST.slice().sort(
+      (a, b) => (usedCounts[a.key] || 0) - (usedCounts[b.key] || 0)
+    )[0]?.key || "p1";
+    setWarna(leastUsed as ProjectColorKey);
     setTanggalMulai(getJakartaTodayString());
     setDeadline("");
     setStatus("aktif");
@@ -82,6 +100,7 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
     setTarifPerPcs(project.tarif_per_pcs);
     setRewardAktif(Boolean(project.reward_aktif));
     setAmbangReward(project.reward_aktif ? project.ambang_reward || 0 : 0);
+    setWarna(project.warna || "p1");
     setTanggalMulai(project.tanggal_mulai);
     setDeadline(project.deadline || "");
     setStatus(project.status);
@@ -124,6 +143,7 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
       tarif_per_pcs: Number(tarifPerPcs),
       reward_aktif: rewardAktif,
       ambang_reward: rewardAktif ? Number(ambangReward) : 0,
+      warna,
       tanggal_mulai: tanggalMulai,
       deadline: deadline || null,
       status,
@@ -217,13 +237,27 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
                   {/* Header Proyek */}
                   <div className="flex items-start justify-between gap-3 mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-[12px] bg-surface-muted flex items-center justify-center text-ink shrink-0">
-                        <Briefcase className="w-5 h-5 text-forest-900" />
-                      </div>
+                      {(() => {
+                        const pColor = getProjectColor(proj.warna);
+                        return (
+                          <div
+                            className={`w-10 h-10 rounded-[12px] ${pColor.bgClass} border ${pColor.borderClass} flex items-center justify-center ${pColor.textClass} shrink-0 font-bold text-[13px] shadow-sm`}
+                            title={`Warna Proyek: ${pColor.name}`}
+                          >
+                            {getProjectInitials(proj.nama)}
+                          </div>
+                        );
+                      })()}
                       <div>
-                        <h2 className="text-[16px] font-semibold text-ink leading-snug">
-                          {proj.nama}
-                        </h2>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`w-2 h-2 rounded-full ${getProjectColor(proj.warna).dotClass} shrink-0`}
+                            aria-hidden="true"
+                          />
+                          <h2 className="text-[16px] font-semibold text-ink leading-snug">
+                            {proj.nama}
+                          </h2>
+                        </div>
                         <div className="flex flex-wrap items-center gap-2 mt-1">
                           {isAktif ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-semibold">
@@ -472,6 +506,43 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
               <option value="selesai">Selesai (Ditutup)</option>
               <option value="diarsipkan">Diarsipkan</option>
             </select>
+          </div>
+
+          {/* Warna Indikator Proyek (Tahap 17) */}
+          <div>
+            <label className="block text-[12px] font-semibold text-muted uppercase tracking-wider mb-1.5">
+              Warna Indikator Proyek
+            </label>
+            <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 p-3 bg-surface-muted rounded-panel border border-line">
+              {PROJECT_COLOR_LIST.map((c) => {
+                const isSelected = warna === c.key;
+                return (
+                  <button
+                    key={c.key}
+                    type="button"
+                    onClick={() => setWarna(c.key)}
+                    className={`flex flex-col items-center gap-1 p-1.5 rounded-card border transition-all ${
+                      isSelected
+                        ? "bg-surface border-forest-900 ring-2 ring-forest-900/10 shadow-sm"
+                        : "border-transparent hover:bg-surface/60"
+                    }`}
+                    title={c.name}
+                  >
+                    <span
+                      className={`w-6 h-6 rounded-full ${c.dotClass} flex items-center justify-center text-white text-[10px] font-bold shadow-xs`}
+                    >
+                      {isSelected ? "✓" : ""}
+                    </span>
+                    <span className="text-[10px] font-medium text-muted truncate max-w-full">
+                      {c.name.split(" ")[0]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-muted mt-1">
+              Warna ini dipakai pada kalender kerja, grafik garis waktu, dan ringkasan multi-proyek.
+            </p>
           </div>
 
           <div className="pt-3 flex items-center justify-end gap-2 border-t border-line/60">
