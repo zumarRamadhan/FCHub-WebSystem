@@ -41,6 +41,7 @@ interface ProjectProgressRow {
   nama_proyek: string;
   target_pcs: number;
   tarif_per_pcs: number;
+  reward_aktif?: boolean;
   ambang_reward: number;
   status_proyek: string;
   tanggal_mulai: string;
@@ -152,11 +153,22 @@ export default async function OwnerDashboardPage({
     .order("status_proyek", { ascending: true }) // 'aktif' first
     .order("tanggal_mulai", { ascending: false });
 
+  // Ambil status reward_aktif dari tabel projects
+  const { data: rawProjectsTable } = await supabase
+    .from("projects")
+    .select("id, reward_aktif");
+
+  const rewardAktifMap: Record<string, boolean> = {};
+  (rawProjectsTable || []).forEach((p) => {
+    rewardAktifMap[p.id] = Boolean(p.reward_aktif);
+  });
+
   const allProjects: ProjectProgressRow[] = (rawProjects || []).map((p) => ({
     project_id: p.project_id,
     nama_proyek: p.nama_proyek,
     target_pcs: Number(p.target_pcs || 0),
     tarif_per_pcs: Number(p.tarif_per_pcs || 500),
+    reward_aktif: rewardAktifMap[p.project_id] ?? false,
     ambang_reward: Number(p.ambang_reward || 0),
     status_proyek: p.status_proyek || "aktif",
     tanggal_mulai: p.tanggal_mulai,
@@ -1209,10 +1221,10 @@ export default async function OwnerDashboardPage({
                 </p>
               </div>
 
-              {selectedProject.ambang_reward > 0 && (
+              {selectedProject.reward_aktif && selectedProject.ambang_reward > 0 && (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-lime-100 text-positive text-[12px] font-semibold shrink-0">
                   <Sparkles className="w-3.5 h-3.5 text-positive" />
-                  Ambang Reward: {formatNumber(selectedProject.ambang_reward)} pcs
+                  Reward aktif – ambang {formatNumber(selectedProject.ambang_reward)} pcs
                 </span>
               )}
             </div>
@@ -1268,7 +1280,7 @@ export default async function OwnerDashboardPage({
                           {formatRupiah(row.total_upah)}
                         </td>
                         <td className="py-3 px-3 text-center">
-                          {row.melewati_ambang_reward ? (
+                          {selectedProject.reward_aktif && row.melewati_ambang_reward ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill bg-forest-900 text-lime-400 text-[11px] font-semibold">
                               <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400" />
                               Lolos Reward

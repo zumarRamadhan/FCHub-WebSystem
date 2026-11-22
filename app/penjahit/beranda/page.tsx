@@ -123,6 +123,50 @@ export default async function PenjahitBerandaPage() {
     status: e.status,
   }));
 
+  // 5. Query Progres Reward untuk Proyek Aktif yang Bereward (Tahap 15)
+  // Aturan Bisnis #9, #16, #17: Hanya proyek dengan reward_aktif = true
+  const { data: rawRewardProjects } = await supabase
+    .from("projects")
+    .select("id, nama, ambang_reward, target_pcs")
+    .eq("status", "aktif")
+    .eq("reward_aktif", true);
+
+  const rewardProgressList = await Promise.all(
+    (rawRewardProjects || []).map(async (prj) => {
+      // Ambil entri penjahit ini untuk proyek tersebut
+      const { data: prjEntries } = await supabase
+        .from("production_entries")
+        .select("qty, qty_disetujui, status")
+        .eq("user_id", user.id)
+        .eq("project_id", prj.id);
+
+      let pcsDisetujui = 0;
+      let pcsMenunggu = 0;
+
+      (prjEntries || []).forEach((pe) => {
+        if (pe.status === "disetujui") {
+          pcsDisetujui += Number(pe.qty_disetujui || 0);
+        } else if (pe.status === "menunggu") {
+          pcsMenunggu += Number(pe.qty || 0);
+        }
+      });
+
+      const ambang = Number(prj.ambang_reward || 0);
+      const sisa = Math.max(0, ambang - pcsDisetujui);
+      const isQualified = ambang > 0 && pcsDisetujui >= ambang;
+
+      return {
+        projectId: prj.id,
+        namaProyek: prj.nama,
+        ambangReward: ambang,
+        pcsDisetujui,
+        pcsMenunggu,
+        sisaPcs: sisa,
+        isQualified,
+      };
+    })
+  );
+
   return (
     <BerandaClient
       pcsDisetujuiMingguIni={pcsDisetujuiMingguIni}
@@ -130,6 +174,7 @@ export default async function PenjahitBerandaPage() {
       pcsHariIni={pcsHariIni}
       targetHariIni={100}
       paymentInfo={paymentInfo}
+      rewardProgressList={rewardProgressList}
       recentEntries={recentEntries}
     />
   );

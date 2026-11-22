@@ -89,7 +89,7 @@ Empat tabel utama. Rekap upah, progres proyek, dan leaderboard **dihitung dari `
 | Tabel | Field utama |
 | --- | --- |
 | `users` | `id`, `nama`, `username`, `role` (`owner` / `penjahit`), `aktif` |
-| `projects` | `id`, `nama`, `target_pcs`, `tarif_per_pcs`, `ambang_reward`, `tanggal_mulai`, `deadline`, `status` |
+| `projects` | `id`, `nama`, `target_pcs`, `tarif_per_pcs`, `reward_aktif`, `ambang_reward`, `tanggal_mulai`, `deadline`, `status` |
 | `production_entries` | `id`, `user_id`, `project_id`, `tanggal_kerja`, `qty`, `qty_disetujui`, `tarif_snapshot`, `status` (`menunggu` / `disetujui` / `ditolak`), `catatan_owner`, `disetujui_oleh`, `disetujui_pada`, `dibuat_pada` |
 | `wage_payments` | `id`, `user_id`, `periode_mulai`, `periode_selesai`, `total_pcs`, `jumlah`, `rincian` (jsonb), `status` (`dibayar` / `dibatalkan`), `catatan`, `dibayar_oleh`, `dibayar_pada`, `dibatalkan_oleh`, `dibatalkan_pada`, `alasan_batal` |
 
@@ -113,13 +113,16 @@ Aturan ini adalah inti sistem. Jangan dilanggar atau diubah tanpa persetujuan ek
 6. **Input `disetujui`** tidak bisa diubah penjahit; hanya owner.
 7. **Penjahit boleh mengubah atau menghapus entri sendiri hanya selama `menunggu`.**
 8. **Penjahit hanya melihat data miliknya sendiri.** Leaderboard hanya menampilkan nama dan total pcs disetujui.
-9. **Penanda reward**: muncul bila total `qty_disetujui` seorang penjahit pada satu proyek mencapai `ambang_reward`. Pemberian reward adalah keputusan owner; sistem hanya menandai.
+9. **Penanda dan progres reward**: hanya muncul untuk proyek dengan `reward_aktif = true`. Total `qty_disetujui` seorang penjahit pada proyek tersebut harus mencapai `ambang_reward`. Pemberian reward adalah keputusan owner; sistem hanya menandai.
 10. **Rekap mingguan** dihitung dari `tanggal_kerja`. Batas awal dan akhir minggu belum dikonfirmasi ke owner; jadikan konfigurasi di satu tempat (konstanta atau pengaturan), jangan di-hardcode tersebar.
 11. **Pembayaran dicatat sebagai riwayat di tabel `wage_payments`**. Tidak boleh di-update atau di-delete langsung; pembatalan hanya lewat fungsi dengan alasan wajib, dan catatannya tetap ada (status `'dibatalkan'`).
 12. **Setiap pembayaran menyimpan salinan angka saat dibayar**: `total_pcs`, `jumlah` (rupiah), dan `rincian` per proyek (`jsonb`). Angka ini tidak berubah walau entri dikoreksi kemudian.
 13. **Status minggu per penjahit** dihitung dengan membandingkan `upah_saat_ini` (dari entri disetujui, `qty_disetujui × tarif_snapshot`) dengan total pembayaran aktif (`status = 'dibayar'`): `Belum dibayar`, `Lunas`, `Kurang bayar` (upah naik setelah dibayar), `Lebih bayar` (upah turun setelah dibayar), `Tanpa upah`.
 14. **"Tandai dibayar" membayar SISA** (`upah_saat_ini` dikurangi total pembayaran aktif), hanya bila sisa > 0, dieksekusi atomik di database dengan advisory lock (`pg_advisory_xact_lock`) agar klik ganda atau dua owner tidak membuat catatan ganda. Tidak ada pembayaran dengan nominal bebas.
 15. **Hanya owner yang boleh membuat atau membatalkan pembayaran**; penjahit hanya boleh melihat catatan miliknya.
+16. **Pengaturan reward (`reward_aktif`) diatur manual oleh owner** di setiap proyek dan bisa dinyalakan/dimatikan kapan saja, dengan default `false` untuk proyek baru. Tidak ada penentuan reward otomatis berdasarkan batas target pcs tertentu.
+17. **`ambang_reward` wajib diisi (> 0 dan <= `target_pcs`) hanya bila `reward_aktif = true`**. Bila `reward_aktif = false`, `ambang_reward` tidak wajib / bernilai 0.
+18. **Leaderboard untuk penjahit hanya menampilkan proyek bereward (`reward_aktif = true`)**; bila tidak ada proyek bereward aktif, penjahit melihat pesan ramah. Owner tetap melihat leaderboard untuk semua proyek.
 
 Pertanyaan yang masih terbuka (jangan berasumsi di kode tanpa menandainya dengan `TODO(owner)`): apakah ada tahap kerja dengan tarif berbeda, apakah tarif sama untuk semua penjahit dalam satu proyek, apakah satu penjahit boleh input lebih dari sekali sehari.
 

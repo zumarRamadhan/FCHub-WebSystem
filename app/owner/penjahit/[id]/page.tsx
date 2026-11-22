@@ -86,6 +86,7 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
       status: string;
       target_pcs: number;
       tarif_per_pcs: number;
+      reward_aktif?: boolean;
       ambang_reward: number;
     } | null;
   }
@@ -96,6 +97,16 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
   const { data: projectProgressData } = await supabase
     .from("v_project_progress")
     .select("project_id, total_pcs_disetujui");
+
+  // Ambil status reward_aktif dari tabel projects
+  const { data: rawProjectsTable } = await supabase
+    .from("projects")
+    .select("id, reward_aktif");
+
+  const rewardAktifMap: Record<string, boolean> = {};
+  (rawProjectsTable || []).forEach((p) => {
+    rewardAktifMap[p.id] = Boolean(p.reward_aktif);
+  });
 
   const projectTotalPcsMap: Record<string, number> = {};
   (projectProgressData || []).forEach((pp) => {
@@ -111,6 +122,7 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
       status_proyek: string;
       total_pcs: number;
       total_upah: number;
+      reward_aktif: boolean;
       ambang_reward: number;
       tanggal_pertama: string;
       tanggal_terakhir: string;
@@ -122,6 +134,7 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
     const wage = calculateEntryWage("disetujui", q, Number(e.tarif_snapshot || 500));
     const prj = e.projects;
     const pId = e.project_id;
+    const isRewardAktif = rewardAktifMap[pId] ?? Boolean(prj?.reward_aktif);
 
     if (!projectMap[pId]) {
       projectMap[pId] = {
@@ -130,6 +143,7 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
         status_proyek: prj?.status || "aktif",
         total_pcs: 0,
         total_upah: 0,
+        reward_aktif: isRewardAktif,
         ambang_reward: Number(prj?.ambang_reward || 0),
         tanggal_pertama: e.tanggal_kerja,
         tanggal_terakhir: e.tanggal_kerja,
@@ -150,7 +164,8 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
     const grandPcs = projectTotalPcsMap[p.project_id] || p.total_pcs;
     const persenKontribusi =
       grandPcs > 0 ? Math.round((p.total_pcs / grandPcs) * 1000) / 10 : 0;
-    const melewatiReward = p.ambang_reward > 0 && p.total_pcs >= p.ambang_reward;
+    const melewatiReward =
+      p.reward_aktif && p.ambang_reward > 0 && p.total_pcs >= p.ambang_reward;
 
     return {
       project_id: p.project_id,
@@ -159,6 +174,7 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
       total_pcs: p.total_pcs,
       total_upah: p.total_upah,
       persen_kontribusi: persenKontribusi,
+      reward_aktif: p.reward_aktif,
       melewati_ambang_reward: melewatiReward,
       ambang_reward: p.ambang_reward,
       tanggal_pertama_kerja: p.tanggal_pertama,

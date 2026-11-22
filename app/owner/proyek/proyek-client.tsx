@@ -23,6 +23,7 @@ export interface ProjectItem {
   nama: string;
   target_pcs: number;
   tarif_per_pcs: number;
+  reward_aktif?: boolean;
   ambang_reward: number;
   tanggal_mulai: string;
   deadline: string | null;
@@ -46,7 +47,8 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
   const [nama, setNama] = React.useState("");
   const [targetPcs, setTargetPcs] = React.useState<number>(1000);
   const [tarifPerPcs, setTarifPerPcs] = React.useState<number>(500);
-  const [ambangReward, setAmbangReward] = React.useState<number>(1500);
+  const [rewardAktif, setRewardAktif] = React.useState<boolean>(false);
+  const [ambangReward, setAmbangReward] = React.useState<number>(0);
   const [tanggalMulai, setTanggalMulai] = React.useState(getJakartaTodayString());
   const [deadline, setDeadline] = React.useState("");
   const [status, setStatus] = React.useState<"aktif" | "selesai" | "diarsipkan">("aktif");
@@ -54,13 +56,17 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
   const [isLoading, setIsLoading] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
+  // Dialog Konfirmasi Mematikan Reward
+  const [isConfirmDisableRewardOpen, setIsConfirmDisableRewardOpen] = React.useState(false);
+
   // Buka Modal Tambah Proyek
   const handleOpenAdd = () => {
     setEditingProject(null);
     setNama("");
     setTargetPcs(1000);
     setTarifPerPcs(500);
-    setAmbangReward(1500);
+    setRewardAktif(false);
+    setAmbangReward(0);
     setTanggalMulai(getJakartaTodayString());
     setDeadline("");
     setStatus("aktif");
@@ -74,12 +80,36 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
     setNama(project.nama);
     setTargetPcs(project.target_pcs);
     setTarifPerPcs(project.tarif_per_pcs);
-    setAmbangReward(project.ambang_reward || 0);
+    setRewardAktif(Boolean(project.reward_aktif));
+    setAmbangReward(project.reward_aktif ? project.ambang_reward || 0 : 0);
     setTanggalMulai(project.tanggal_mulai);
     setDeadline(project.deadline || "");
     setStatus(project.status);
     setErrorMsg(null);
     setIsModalOpen(true);
+  };
+
+  // Toggle Reward Handler
+  const handleToggleReward = () => {
+    if (rewardAktif) {
+      if (editingProject && editingProject.reward_aktif) {
+        setIsConfirmDisableRewardOpen(true);
+        return;
+      }
+      setRewardAktif(false);
+      setAmbangReward(0);
+    } else {
+      setRewardAktif(true);
+      if (!ambangReward || ambangReward <= 0) {
+        setAmbangReward(Math.min(1500, targetPcs));
+      }
+    }
+  };
+
+  const handleConfirmDisableReward = () => {
+    setRewardAktif(false);
+    setAmbangReward(0);
+    setIsConfirmDisableRewardOpen(false);
   };
 
   // Submit Form
@@ -92,7 +122,8 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
       nama,
       target_pcs: Number(targetPcs),
       tarif_per_pcs: Number(tarifPerPcs),
-      ambang_reward: Number(ambangReward),
+      reward_aktif: rewardAktif,
+      ambang_reward: rewardAktif ? Number(ambangReward) : 0,
       tanggal_mulai: tanggalMulai,
       deadline: deadline || null,
       status,
@@ -193,7 +224,7 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
                         <h2 className="text-[16px] font-semibold text-ink leading-snug">
                           {proj.nama}
                         </h2>
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex flex-wrap items-center gap-2 mt-1">
                           {isAktif ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill bg-lime-100 text-positive text-[11px] font-semibold">
                               <CheckCircle2 className="w-3 h-3" /> Aktif
@@ -206,6 +237,11 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
                           <span className="text-[12px] font-semibold text-forest-900">
                             {formatRupiah(proj.tarif_per_pcs)} / pcs
                           </span>
+                          {proj.reward_aktif && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-pill bg-lime-100 text-positive text-[10.5px] font-bold border border-lime-300">
+                              Reward aktif – ambang {formatNumber(proj.ambang_reward)} pcs
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -233,13 +269,15 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
                   </div>
 
                   {/* Rincian Proyek */}
-                  <div className="grid grid-cols-2 gap-2 text-[12px] pt-1">
-                    <div className="p-2.5 rounded-panel bg-surface border border-line/50">
-                      <span className="text-muted block text-[11px]">Ambang Reward:</span>
-                      <strong className="text-ink font-semibold tabular-nums">
-                        {proj.ambang_reward > 0 ? `${formatNumber(proj.ambang_reward)} pcs` : "Tidak ada"}
-                      </strong>
-                    </div>
+                  <div className={`grid ${proj.reward_aktif ? "grid-cols-2" : "grid-cols-1"} gap-2 text-[12px] pt-1`}>
+                    {proj.reward_aktif && (
+                      <div className="p-2.5 rounded-panel bg-surface border border-line/50">
+                        <span className="text-muted block text-[11px]">Ambang Reward:</span>
+                        <strong className="text-forest-900 font-semibold tabular-nums">
+                          {formatNumber(proj.ambang_reward)} pcs
+                        </strong>
+                      </div>
+                    )}
 
                     <div className="p-2.5 rounded-panel bg-surface border border-line/50">
                       <span className="text-muted block text-[11px]">Deadline:</span>
@@ -334,22 +372,65 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
             </div>
           </div>
 
-          <div>
-            <label className="block text-[12px] font-semibold text-muted uppercase tracking-wider mb-1">
-              Ambang Reward Penjahit (Pcs)
-            </label>
-            <input
-              type="number"
-              min={0}
-              value={ambangReward}
-              onChange={(e) => setAmbangReward(Number(e.target.value))}
-              placeholder="contoh: 1500 (kosongkan jika tidak ada)"
-              className="w-full h-11 px-3.5 rounded-control bg-surface-muted border border-line text-ink text-[14px] tabular-nums focus:outline-none focus:border-forest-900"
-            />
-            <p className="text-[11px] text-muted mt-1">
-              Penjahit yang total pcs-nya melewati angka ini akan ditandai berhak mendapat reward.
-            </p>
+          {/* Toggle Aktifkan Reward (Tahap 15) */}
+          <div className="p-3 bg-surface-muted rounded-panel border border-line space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <label
+                  onClick={handleToggleReward}
+                  className="text-[13px] font-semibold text-ink cursor-pointer flex items-center gap-2 select-none"
+                >
+                  <span>Aktifkan Reward</span>
+                  {rewardAktif && (
+                    <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-pill bg-lime-100 text-positive">
+                      Aktif
+                    </span>
+                  )}
+                </label>
+                <p className="text-[11px] text-muted mt-0.5">
+                  Untuk proyek besar. Penjahit melihat progres dan leaderboard proyek ini.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={rewardAktif}
+                onChange={handleToggleReward}
+                className="w-5 h-5 accent-forest-900 cursor-pointer rounded"
+              />
+            </div>
+
+            {/* Catatan jika diaktifkan di tengah proyek berjalan */}
+            {editingProject && !editingProject.reward_aktif && rewardAktif && (
+              <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-panel text-[11.5px] text-amber-900 flex items-start gap-1.5">
+                <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <span>
+                  Perhitungan kualifikasi reward akan memakai seluruh pcs disetujui sejak proyek dimulai.
+                </span>
+              </div>
+            )}
           </div>
+
+          {/* Kolom Ambang Reward hanya tampil dan wajib jika reward aktif */}
+          {rewardAktif && (
+            <div>
+              <label className="block text-[12px] font-semibold text-muted uppercase tracking-wider mb-1">
+                Ambang Reward Penjahit (Pcs) <span className="text-negative">*</span>
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={targetPcs}
+                required={rewardAktif}
+                value={ambangReward || ""}
+                onChange={(e) => setAmbangReward(Number(e.target.value))}
+                placeholder={`Maksimal ${formatNumber(targetPcs)} pcs`}
+                className="w-full h-11 px-3.5 rounded-control bg-surface-muted border border-line text-ink text-[14px] tabular-nums focus:outline-none focus:border-forest-900"
+              />
+              <p className="text-[11px] text-muted mt-1">
+                Penjahit dengan total pcs disetujui mencapai angka ini akan ditandai berhak mendapat reward.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -407,6 +488,39 @@ export function ProyekClient({ initialProjects }: ProyekClientProps) {
             </Button>
           </div>
         </form>
+      </Dialog>
+
+      {/* Dialog Konfirmasi Mematikan Reward */}
+      <Dialog
+        isOpen={isConfirmDisableRewardOpen}
+        onClose={() => setIsConfirmDisableRewardOpen(false)}
+        title="Matikan Reward Proyek?"
+        subtitle="Konfirmasi perubahan status reward pada proyek berjalan."
+      >
+        <div className="space-y-3 text-[13px] text-muted py-1">
+          <p className="text-ink font-medium">
+            Penjahit tidak akan lagi melihat progres reward dan leaderboard proyek ini.
+          </p>
+          <p className="text-[12px] leading-relaxed">
+            Apakah Anda yakin ingin menonaktifkan reward untuk proyek <strong>{editingProject?.nama}</strong>?
+          </p>
+          <div className="pt-3 flex items-center justify-end gap-2 border-t border-line/60 mt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setIsConfirmDisableRewardOpen(false)}
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={handleConfirmDisableReward}
+            >
+              Ya, Matikan Reward
+            </Button>
+          </div>
+        </div>
       </Dialog>
     </div>
   );

@@ -48,6 +48,7 @@ export interface TailorDetailData {
     total_pcs: number;
     total_upah: number;
     persen_kontribusi: number;
+    reward_aktif?: boolean;
     melewati_ambang_reward: boolean;
     ambang_reward: number;
     tanggal_pertama_kerja: string;
@@ -545,12 +546,12 @@ export function PenjahitDetailClient({ data }: DetailProps) {
                       </p>
                     </div>
 
-                    {/* Penanda Reward bila Melewati Ambang */}
-                    {prj.melewati_ambang_reward ? (
+                    {/* Penanda Reward bila Melewati Ambang (Hanya jika reward_aktif) */}
+                    {prj.reward_aktif && prj.melewati_ambang_reward ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold">
                         <Sparkles className="w-3 h-3 text-amber-600 fill-amber-500" /> Kualifikasi Reward
                       </span>
-                    ) : prj.ambang_reward > 0 ? (
+                    ) : prj.reward_aktif && prj.ambang_reward > 0 ? (
                       <span className="text-[11px] text-muted bg-surface-muted px-2 py-0.5 rounded-pill">
                         Target Reward: {formatNumber(prj.ambang_reward)} pcs
                       </span>

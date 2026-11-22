@@ -32,6 +32,7 @@ export interface DbProject {
   nama: string;
   target_pcs: number;
   tarif_per_pcs: number;
+  reward_aktif: boolean;
   ambang_reward: number;
   tanggal_mulai: string; // YYYY-MM-DD
   deadline: string | null; // YYYY-MM-DD
@@ -110,6 +111,7 @@ export interface ProjectProgressView {
 export interface LeaderboardView {
   project_id: string;
   nama_proyek: string;
+  reward_aktif?: boolean;
   user_id: string;
   nama_penjahit: string;
   username_penjahit: string;
@@ -244,6 +246,7 @@ export interface TailorProjectView {
   status_proyek: string;
   target_pcs: number;
   tarif_per_pcs: number;
+  reward_aktif?: boolean;
   ambang_reward: number;
   total_pcs: number;
   total_upah: number;

@@ -10,12 +10,24 @@ import {
   Plus,
   CheckCircle2,
   Clock,
+  Sparkles,
 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { RingProgress } from "@/components/ui/ring-progress";
+import { ProgressBar } from "@/components/ui/progress-bar";
 import { StatusBadge, EntryStatus } from "@/components/ui/status-badge";
 import { formatNumber, formatRupiah, formatDateId } from "@/lib/format";
+
+export interface TailorRewardProgress {
+  projectId: string;
+  namaProyek: string;
+  ambangReward: number;
+  pcsDisetujui: number;
+  pcsMenunggu: number;
+  sisaPcs: number;
+  isQualified: boolean;
+}
 
 export interface BerandaProps {
   pcsDisetujuiMingguIni: number;
@@ -26,6 +38,7 @@ export interface BerandaProps {
     isPaid: boolean;
     paidAt?: string;
   };
+  rewardProgressList?: TailorRewardProgress[];
   recentEntries: Array<{
     id: string;
     tanggal_kerja: string;
@@ -43,6 +56,7 @@ export function BerandaClient({
   pcsHariIni,
   targetHariIni = 100,
   paymentInfo,
+  rewardProgressList = [],
   recentEntries,
 }: BerandaProps) {
   const percentageHariIni = Math.min(100, Math.round((pcsHariIni / targetHariIni) * 100));
@@ -143,6 +157,78 @@ export function BerandaClient({
           </Link>
         </div>
       </Card>
+
+      {/* 2b. KARTU PROGRES MENUJU REWARD (Tahap 15) */}
+      {rewardProgressList.length > 0 && (
+        <Card className="p-5 sm:p-6 shadow-card space-y-4">
+          <CardHeader
+            icon={<Sparkles className="w-5 h-5 text-amber-500 fill-amber-400" />}
+            title="Progres Menuju Reward"
+            subtitle="Hanya input berstatus disetujui yang dihitung ke reward"
+          />
+
+          <div className="space-y-4 divide-y divide-line/60">
+            {rewardProgressList.map((rp, idx) => {
+              const progressPct = Math.min(
+                100,
+                Math.round((rp.pcsDisetujui / rp.ambangReward) * 100)
+              );
+
+              return (
+                <div key={rp.projectId} className={idx > 0 ? "pt-4" : ""}>
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <div>
+                      <h4 className="text-[14px] font-semibold text-ink leading-snug">
+                        {rp.namaProyek}
+                      </h4>
+                      <p className="text-[12px] text-muted mt-0.5">
+                        {rp.isQualified ? (
+                          <span className="text-positive font-semibold">
+                            Kamu sudah melewati ambang reward ({formatNumber(rp.pcsDisetujui)} / {formatNumber(rp.ambangReward)} pcs)
+                          </span>
+                        ) : (
+                          <span>
+                            Tinggal{" "}
+                            <strong className="text-ink font-semibold">
+                              {formatNumber(rp.sisaPcs)} pcs
+                            </strong>{" "}
+                            lagi untuk reward proyek {rp.namaProyek}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+
+                    {rp.isQualified ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold shrink-0">
+                        <Sparkles className="w-3 h-3 text-amber-600 fill-amber-500" /> Kualifikasi Tercapai
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-muted bg-surface-muted px-2 py-0.5 rounded-pill shrink-0 tabular-nums">
+                        {progressPct}%
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-2 space-y-1.5">
+                    <ProgressBar value={rp.pcsDisetujui} max={rp.ambangReward} />
+                    <div className="flex items-center justify-between text-[11px] text-muted">
+                      <span>{formatNumber(rp.pcsDisetujui)} disetujui</span>
+                      <span>Target: {formatNumber(rp.ambangReward)} pcs</span>
+                    </div>
+                  </div>
+
+                  {rp.pcsMenunggu > 0 && (
+                    <p className="text-[11px] text-warning font-medium mt-1.5 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      +{formatNumber(rp.pcsMenunggu)} pcs menunggu persetujuan (belum dihitung)
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* 3. KARTU RIWAYAT TERBARU (5 Baris Terakhir) */}
       <Card className="p-5 sm:p-6 shadow-card">

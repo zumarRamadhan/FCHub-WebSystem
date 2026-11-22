@@ -21,6 +21,7 @@ export interface ActiveProject {
   id: string;
   nama: string;
   tarif_per_pcs: number;
+  reward_aktif?: boolean;
 }
 
 interface InputClientProps {
@@ -262,6 +263,7 @@ export function InputClient({
                     {sortedProjects.map((p) => (
                       <option key={p.id} value={p.id} className="text-ink text-[15px] py-2">
                         {p.nama}
+                        {p.reward_aktif ? " (Ada reward)" : ""}
                       </option>
                     ))}
                   </select>

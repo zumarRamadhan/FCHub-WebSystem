@@ -5,11 +5,12 @@ import { LeaderboardPublicItem } from "@/lib/types/database";
 export default async function PenjahitLeaderboardPage() {
   const supabase = createClient();
 
-  // 1. Ambil daftar proyek aktif
+  // 1. Ambil daftar proyek aktif yang memiliki reward aktif (Aturan Bisnis #18)
   const { data: rawProjects } = await supabase
     .from("projects")
     .select("id, nama, ambang_reward")
     .eq("status", "aktif")
+    .eq("reward_aktif", true)
     .order("created_at", { ascending: false });
 
   const projects: ProjectOptionItem[] = (rawProjects || []).map((p) => ({

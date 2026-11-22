@@ -67,10 +67,10 @@ export function LeaderboardClient({
           <Trophy className="w-6 h-6" />
         </div>
         <h3 className="text-[17px] font-semibold text-ink">
-          Belum Ada Proyek Aktif
+          Tidak Ada Kompetisi Reward Aktif
         </h3>
         <p className="text-[13px] text-muted max-w-sm mx-auto mt-1">
-          Leaderboard akan muncul setelah owner mengaktifkan proyek konveksi.
+          Kompetisi dan papan peringkat leaderboard hanya tersedia pada proyek besar konveksi yang mengaktifkan program reward.
         </p>
       </Card>
     );

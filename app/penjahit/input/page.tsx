@@ -7,7 +7,7 @@ export default async function PenjahitInputPage() {
   // 1. Ambil proyek aktif yang bisa dipilih penjahit
   const { data: rawProjects } = await supabase
     .from("projects")
-    .select("id, nama, tarif_per_pcs")
+    .select("id, nama, tarif_per_pcs, reward_aktif")
     .eq("status", "aktif")
     .order("nama", { ascending: true });
 
@@ -15,6 +15,7 @@ export default async function PenjahitInputPage() {
     id: p.id,
     nama: p.nama,
     tarif_per_pcs: Number(p.tarif_per_pcs || 500),
+    reward_aktif: Boolean(p.reward_aktif),
   }));
 
   // 2. Ambil proyek terakhir yang pernah dipakai oleh penjahit ini

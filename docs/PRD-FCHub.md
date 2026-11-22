@@ -80,8 +80,9 @@ Penjahit mengakses FCHub dari HP, jadi seluruh fitur dirancang untuk layar kecil
 | P4 | Riwayat input dengan status Menunggu, Disetujui, atau Ditolak beserta catatan owner | Demo |
 | P5 | Ubah atau hapus input selama masih berstatus Menunggu | Demo |
 | P6 | Ringkasan minggu berjalan: total pcs disetujui dan estimasi upah | Demo |
-| P7 | Leaderboard proyek: peringkat dan total pcs disetujui | Demo |
+| P7 | Leaderboard proyek: peringkat dan total pcs disetujui (hanya untuk proyek dengan reward aktif) | Demo |
 | P8 | Melihat status pembayaran upah mingguan (Belum dibayar / Sudah dibayar beserta tanggal pembayaran) di Beranda dan Riwayat | Demo |
+| P9 | Melihat kartu progres menuju reward pada Beranda untuk proyek bereward yang aktif | Demo |
 
 ## Kebutuhan fungsional: Owner
 Owner memakai FCHub terutama untuk approval harian dan rekap upah mingguan.
@@ -89,13 +90,13 @@ Owner memakai FCHub terutama untuk approval harian dan rekap upah mingguan.
 | ID | Kebutuhan | Rilis |
 | --- | --- | --- |
 | O1 | Login owner | Demo |
-| O2 | Kelola proyek: nama, target total pcs, tanggal mulai dan deadline, tarif per pcs, ambang reward | Demo |
+| O2 | Kelola proyek: nama, target total pcs, tanggal mulai dan deadline, tarif per pcs, toggle aktifkan reward, ambang reward | Demo |
 | O3 | Kelola penjahit: nama, username, reset PIN, status aktif atau nonaktif | Demo |
 | O4 | Antrean approval: daftar input berstatus Menunggu per tanggal; setujui, tolak dengan catatan, atau koreksi jumlah | Demo |
 | O5 | Tombol "Setujui semua" untuk input yang tidak perlu diubah | Demo |
 | O6 | Rekap upah mingguan per penjahit: total pcs disetujui, tarif, dan upah yang harus dibayar | Demo |
 | O7 | Dashboard proyek: total pcs disetujui dibandingkan target, serta jumlah input yang menunggu | Demo |
-| O8 | Leaderboard proyek dengan penanda penjahit yang sudah melewati ambang reward | Demo |
+| O8 | Leaderboard proyek dengan penanda penjahit yang sudah melewati ambang reward (pada proyek dengan reward aktif) | Demo |
 | O9 | Cetak slip upah dan export rekap ke Excel atau PDF | Setelah demo |
 | O10 | Riwayat perubahan lengkap: siapa mengubah apa dan kapan | Setelah demo |
 | O11 | Pencatatan status pembayaran tunai mingguan: tandai lunas (atomik dengan advisory lock), rincian snapshot per proyek, serta pembatalan dengan alasan wajib | Demo |
@@ -107,8 +108,9 @@ Aturan berikut menggantikan fungsi buku owner dan mencegah sengketa upah.
 - Bila owner mengoreksi jumlah, sistem menyimpan jumlah asli, jumlah akhir, serta siapa dan kapan koreksi dilakukan.
 - Input yang ditolak tidak dihitung; penjahit dapat membuat input baru.
 - Input yang sudah disetujui hanya bisa diubah oleh owner.
-- Penjahit hanya melihat data miliknya sendiri; leaderboard hanya menampilkan nama dan total pcs.
-- Penanda reward muncul saat total pcs disetujui seorang penjahit pada satu proyek mencapai ambang. Pemberian reward tetap keputusan owner.
+- Penjahit hanya melihat data miliknya sendiri; leaderboard penjahit hanya menampilkan nama dan total pcs untuk proyek yang memiliki reward aktif.
+- Penanda dan progres reward hanya muncul untuk proyek dengan reward_aktif = true. Total pcs disetujui seorang penjahit pada proyek tersebut harus mencapai ambang. Pemberian reward tetap keputusan manual owner.
+- Pengaturan reward (reward_aktif) diatur manual oleh owner, default false untuk proyek baru. Ambang reward wajib diisi (> 0 dan <= target_pcs) hanya bila reward_aktif = true.
 - Rekap mingguan dihitung dari tanggal kerja pada input; batas awal dan akhir minggu perlu dikonfirmasi ke owner (lihat bagian Risiko).
 - Pembayaran dicatat sebagai riwayat di tabel `wage_payments`. Tidak boleh di-update atau di-delete langsung; pembatalan hanya lewat fungsi dengan alasan wajib, dan catatannya tetap ada (status 'dibatalkan').
 - Setiap pembayaran menyimpan salinan angka saat dibayar: `total_pcs`, `jumlah` (rupiah), dan `rincian` per proyek (`jsonb`). Angka ini tidak berubah walau entri dikoreksi kemudian.
@@ -122,7 +124,7 @@ Model data memiliki empat tabel utama. Rekap upah, progres proyek, dan leaderboa
 | Tabel | Field utama | Catatan |
 | --- | --- | --- |
 | users | id, nama, username, pin_hash, role (owner atau penjahit), aktif | Role menentukan hak akses |
-| projects | id, nama, target_pcs, tarif_per_pcs, ambang_reward, tanggal_mulai, deadline, status | Satu proyek bisa berjalan bersamaan dengan proyek lain |
+| projects | id, nama, target_pcs, tarif_per_pcs, reward_aktif, ambang_reward, tanggal_mulai, deadline, status | Satu proyek bisa berjalan bersamaan dengan proyek lain. reward_aktif menentukan apakah proyek memiliki kompetisi & reward |
 | production_entries | id, user_id, project_id, tanggal_kerja, qty, qty_disetujui, tarif_snapshot, status (menunggu, disetujui, ditolak), catatan_owner, disetujui_oleh, disetujui_pada, dibuat_pada | qty adalah angka dari penjahit; qty_disetujui adalah angka akhir setelah koreksi owner |
 | wage_payments | id, user_id, periode_mulai, periode_selesai, total_pcs, jumlah, rincian (jsonb), status (dibayar, dibatalkan), catatan, dibayar_oleh, dibayar_pada, dibatalkan_oleh, dibatalkan_pada, alasan_batal | Catatan pembayaran tunai mingguan dengan snapshot nilai saat dibayar |
 
