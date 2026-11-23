@@ -157,12 +157,22 @@ export interface WeeklyWageView {
  */
 export type WagePaymentStatus = "dibayar" | "dibatalkan";
 
+export interface WageRateBreakdown {
+  tarif: number;
+  pcs: number;
+  subtotal: number;
+}
+
 export interface WagePaymentProjectDetail {
   project_id: string;
   nama_proyek: string;
   tarif_snapshot: number;
   total_pcs: number;
   subtotal: number;
+  tarif_min?: number;
+  tarif_max?: number;
+  tarif_rata_rata?: number;
+  rincian_tarif?: WageRateBreakdown[];
 }
 
 export interface DbWagePayment {
@@ -259,6 +269,10 @@ export interface TailorProjectView {
   tanggal_pertama_kerja: string;
   tanggal_terakhir_kerja: string;
   total_hari_kerja_proyek: number;
+  tarif_min?: number;
+  tarif_max?: number;
+  tarif_rata_rata?: number;
+  rincian_tarif?: WageRateBreakdown[];
 }
 
 /**
@@ -274,6 +288,16 @@ export interface TailorWeeklyHistoryView {
   sisa: number;
   status_pembayaran: WeeklyWagePaymentStatus;
   tanggal_bayar_terakhir: string | null;
+  rincian_proyek?: Array<{
+    project_id: string;
+    nama_proyek: string;
+    total_pcs: number;
+    total_upah: number;
+    tarif_min: number;
+    tarif_max: number;
+    tarif_rata_rata: number;
+    rincian_tarif: WageRateBreakdown[];
+  }>;
 }
 
 /**
@@ -352,5 +376,149 @@ export interface CalendarMonthDay {
   total_penjahit: number;
   ada_lembur: boolean;
 }
+
+/**
+ * ==============================================================================
+ * TAHAP 18: MANAJEMEN STOK GUDANG & INVENTARIS BARANG JADI
+ * ==============================================================================
+ */
+
+export type StockStatus = "tersedia" | "menipis" | "habis";
+export type StockItemLifecycle = "aktif" | "diarsipkan";
+export type StockMovementType =
+  | "masuk"
+  | "keluar_penjualan"
+  | "keluar_rusak"
+  | "koreksi";
+
+export interface StockItemPhoto {
+  full_path: string;
+  thumb_path: string;
+  created_at?: string;
+  name?: string;
+}
+
+export interface DbStockItem {
+  id: string;
+  kode: string;
+  nama: string;
+  kategori: string;
+  project_id: string | null;
+  stok_saat_ini: number;
+  ambang_menipis: number;
+  harga_jual: number | null;
+  lokasi_gudang: string | null;
+  catatan: string | null;
+  foto: StockItemPhoto[];
+  status: StockItemLifecycle;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StockItemView extends DbStockItem {
+  nama_proyek: string | null;
+  warna_proyek: ProjectColorKey | null;
+  status_stok: StockStatus;
+  sampul_thumb_path: string | null;
+  sampul_full_path: string | null;
+  sampul_thumb_url?: string | null;
+}
+
+export interface DbStockMovement {
+  id: string;
+  stock_item_id: string;
+  jenis: StockMovementType;
+  jumlah: number; // Positif menambah, negatif mengurangi
+  stok_sebelum: number;
+  stok_sesudah: number;
+  harga_satuan: number | null;
+  total_harga: number | null;
+  pembeli: string | null;
+  catatan: string | null;
+  created_by: string | null;
+  created_at: string;
+  nama_pencatat?: string | null;
+}
+
+export interface StockSummary {
+  total_jenis: number;
+  total_pcs_tersedia: number;
+  total_menipis: number;
+  total_habis: number;
+  estimasi_nilai_stok: number;
+}
+
+/**
+ * Tipe Data Laporan Pengeluaran Upah (Tahap Rekap Upah Periode Bebas)
+ */
+export interface WageReportPeriodInfo {
+  mulai: string;
+  selesai: string;
+  jumlah_hari: number;
+  prev_mulai: string;
+  prev_selesai: string;
+}
+
+export interface WageReportSummary {
+  total_upah: number;
+  total_pcs: number;
+  rata_rata_upah_per_pcs: number;
+  jumlah_penjahit_aktif: number;
+  rata_rata_per_penjahit: number;
+  total_dibayar: number;
+  total_belum_dibayar: number;
+  prev_total_upah: number;
+  prev_total_pcs: number;
+  perubahan_upah_persen: number | null;
+  perubahan_pcs_persen: number | null;
+}
+
+export interface WageReportTimeSeriesItem {
+  label: string;
+  start_date: string;
+  end_date: string;
+  upah: number;
+  pcs: number;
+}
+
+export interface WageReportProjectItem {
+  project_id: string;
+  nama_proyek: string;
+  warna: ProjectColorKey | string;
+  total_pcs: number;
+  total_upah: number;
+  persen_dari_total: number;
+  rincian_tarif: Array<{
+    tarif: number;
+    pcs: number;
+    subtotal: number;
+  }>;
+}
+
+export interface WageReportTailorItem {
+  user_id: string;
+  nama_penjahit: string;
+  username_penjahit: string;
+  total_pcs: number;
+  total_upah: number;
+  total_proyek: number;
+  rincian_proyek: Array<{
+    project_id: string;
+    nama_proyek: string;
+    tarif: number;
+    pcs: number;
+    subtotal: number;
+  }>;
+}
+
+export interface WageReportData {
+  periode: WageReportPeriodInfo;
+  ringkasan: WageReportSummary;
+  deret_waktu: WageReportTimeSeriesItem[];
+  per_proyek: WageReportProjectItem[];
+  per_penjahit: WageReportTailorItem[];
+}
+
 
 

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PenjahitDetailClient, TailorDetailData } from "./detail-client";
 import { getWeekDateRange, calculateEntryWage, determineWagePaymentStatus } from "@/lib/wage";
+import { addDays } from "@/lib/dates";
 import { WeeklyWagePaymentStatus, WagePaymentProjectDetail } from "@/lib/types/database";
 
 interface PageProps {
@@ -113,7 +114,36 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
     projectTotalPcsMap[pp.project_id] = Number(pp.total_pcs_disetujui || 0);
   });
 
-  // 4. Hitung Proyek yang Dikerjakan
+  // 4. Hitung Proyek yang Dikerjakan (Coba ambil langsung dari v_tailor_projects view)
+  const { data: rawViewProjects } = await supabase
+    .from("v_tailor_projects")
+    .select("*")
+    .eq("user_id", tailorId);
+
+  interface ViewProjectRow {
+    project_id: string;
+    nama_proyek: string;
+    status_proyek: string;
+    target_pcs: number;
+    tarif_per_pcs: number;
+    ambang_reward: number;
+    total_pcs: number;
+    total_upah: number;
+    grand_total_pcs_proyek: number;
+    persen_kontribusi: number;
+    melewati_ambang_reward: boolean;
+    tanggal_pertama_kerja: string;
+    tanggal_terakhir_kerja: string;
+    total_hari_kerja_proyek: number;
+    reward_aktif?: boolean;
+    tarif_min?: number;
+    tarif_max?: number;
+    tarif_rata_rata?: number;
+    rincian_tarif?: WagePaymentProjectDetail["rincian_tarif"];
+  }
+
+  const viewProjects = (rawViewProjects as unknown as ViewProjectRow[]) || [];
+
   const projectMap: Record<
     string,
     {
@@ -124,14 +154,17 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
       total_upah: number;
       reward_aktif: boolean;
       ambang_reward: number;
+      tarif_per_pcs: number;
       tanggal_pertama: string;
       tanggal_terakhir: string;
+      ratesMap: Record<number, { tarif: number; pcs: number; subtotal: number }>;
     }
   > = {};
 
   entries.forEach((e) => {
     const q = Number(e.qty_disetujui || 0);
-    const wage = calculateEntryWage("disetujui", q, Number(e.tarif_snapshot || 500));
+    const tarif = Number(e.tarif_snapshot || 500);
+    const wage = calculateEntryWage("disetujui", q, tarif);
     const prj = e.projects;
     const pId = e.project_id;
     const isRewardAktif = rewardAktifMap[pId] ?? Boolean(prj?.reward_aktif);
@@ -145,13 +178,21 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
         total_upah: 0,
         reward_aktif: isRewardAktif,
         ambang_reward: Number(prj?.ambang_reward || 0),
+        tarif_per_pcs: Number(prj?.tarif_per_pcs || 500),
         tanggal_pertama: e.tanggal_kerja,
         tanggal_terakhir: e.tanggal_kerja,
+        ratesMap: {},
       };
     }
 
     projectMap[pId].total_pcs += q;
     projectMap[pId].total_upah += wage;
+    if (!projectMap[pId].ratesMap[tarif]) {
+      projectMap[pId].ratesMap[tarif] = { tarif, pcs: 0, subtotal: 0 };
+    }
+    projectMap[pId].ratesMap[tarif].pcs += q;
+    projectMap[pId].ratesMap[tarif].subtotal += wage;
+
     if (e.tanggal_kerja < projectMap[pId].tanggal_pertama) {
       projectMap[pId].tanggal_pertama = e.tanggal_kerja;
     }
@@ -160,27 +201,59 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
     }
   });
 
-  const projectsList = Object.values(projectMap).map((p) => {
-    const grandPcs = projectTotalPcsMap[p.project_id] || p.total_pcs;
-    const persenKontribusi =
-      grandPcs > 0 ? Math.round((p.total_pcs / grandPcs) * 1000) / 10 : 0;
-    const melewatiReward =
-      p.reward_aktif && p.ambang_reward > 0 && p.total_pcs >= p.ambang_reward;
+  let projectsList: TailorDetailData["projects"] = [];
 
-    return {
-      project_id: p.project_id,
-      nama_proyek: p.nama_proyek,
-      status_proyek: p.status_proyek,
-      total_pcs: p.total_pcs,
-      total_upah: p.total_upah,
-      persen_kontribusi: persenKontribusi,
-      reward_aktif: p.reward_aktif,
-      melewati_ambang_reward: melewatiReward,
-      ambang_reward: p.ambang_reward,
-      tanggal_pertama_kerja: p.tanggal_pertama,
-      tanggal_terakhir_kerja: p.tanggal_terakhir,
-    };
-  });
+  if (viewProjects.length > 0) {
+    projectsList = viewProjects.map((vp) => ({
+      project_id: vp.project_id,
+      nama_proyek: vp.nama_proyek,
+      status_proyek: vp.status_proyek,
+      total_pcs: Number(vp.total_pcs),
+      total_upah: Number(vp.total_upah),
+      persen_kontribusi: Number(vp.persen_kontribusi || 0),
+      reward_aktif: Boolean(vp.reward_aktif),
+      melewati_ambang_reward: Boolean(vp.melewati_ambang_reward),
+      ambang_reward: Number(vp.ambang_reward || 0),
+      tanggal_pertama_kerja: vp.tanggal_pertama_kerja,
+      tanggal_terakhir_kerja: vp.tanggal_terakhir_kerja,
+      tarif_per_pcs: Number(vp.tarif_per_pcs || 500),
+      tarif_min: vp.tarif_min !== undefined && vp.tarif_min !== null ? Number(vp.tarif_min) : Number(vp.tarif_per_pcs || 500),
+      tarif_max: vp.tarif_max !== undefined && vp.tarif_max !== null ? Number(vp.tarif_max) : Number(vp.tarif_per_pcs || 500),
+      tarif_rata_rata: vp.tarif_rata_rata !== undefined && vp.tarif_rata_rata !== null ? Number(vp.tarif_rata_rata) : Number(vp.tarif_per_pcs || 500),
+      rincian_tarif: vp.rincian_tarif || [],
+    }));
+  } else {
+    projectsList = Object.values(projectMap).map((p) => {
+      const grandPcs = projectTotalPcsMap[p.project_id] || p.total_pcs;
+      const persenKontribusi =
+        grandPcs > 0 ? Math.round((p.total_pcs / grandPcs) * 1000) / 10 : 0;
+      const melewatiReward =
+        p.reward_aktif && p.ambang_reward > 0 && p.total_pcs >= p.ambang_reward;
+      const rincianTarif = Object.values(p.ratesMap).sort((a, b) => a.tarif - b.tarif);
+      const tarifMin = rincianTarif[0]?.tarif ?? p.tarif_per_pcs;
+      const tarifMax = rincianTarif[rincianTarif.length - 1]?.tarif ?? p.tarif_per_pcs;
+      const tarifRataRata = p.total_pcs > 0 ? Math.round(p.total_upah / p.total_pcs) : p.tarif_per_pcs;
+
+      return {
+        project_id: p.project_id,
+        nama_proyek: p.nama_proyek,
+        status_proyek: p.status_proyek,
+        total_pcs: p.total_pcs,
+        total_upah: p.total_upah,
+        persen_kontribusi: persenKontribusi,
+        reward_aktif: p.reward_aktif,
+        melewati_ambang_reward: melewatiReward,
+        ambang_reward: p.ambang_reward,
+        tanggal_pertama_kerja: p.tanggal_pertama,
+        tanggal_terakhir_kerja: p.tanggal_terakhir,
+        tarif_per_pcs: p.tarif_per_pcs,
+        tarif_min: tarifMin,
+        tarif_max: tarifMax,
+        tarif_rata_rata: tarifRataRata,
+        rincian_tarif: rincianTarif,
+      };
+    });
+  }
 
   // Jika viewSummary belum ada, lengkapi summary dari data fallback
   if (!viewSummary) {
@@ -295,7 +368,14 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
       total_upah: number;
       projectDetailsMap: Record<
         string,
-        { project_id: string; nama_proyek: string; tarif_snapshot: number; total_pcs: number; subtotal: number }
+        {
+          project_id: string;
+          nama_proyek: string;
+          tarif_snapshot: number;
+          total_pcs: number;
+          subtotal: number;
+          ratesMap: Record<number, { tarif: number; pcs: number; subtotal: number }>;
+        }
       >;
       dailyDetails: Array<{
         id: string;
@@ -311,7 +391,8 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
   entries.forEach((e) => {
     const { startDate, endDate } = getWeekDateRange(e.tanggal_kerja);
     const q = Number(e.qty_disetujui || 0);
-    const wage = calculateEntryWage("disetujui", q, Number(e.tarif_snapshot || 500));
+    const tarif = Number(e.tarif_snapshot || 500);
+    const wage = calculateEntryWage("disetujui", q, tarif);
     const prjNama = e.projects?.nama || "Proyek Konveksi";
 
     if (!weeklyMap[startDate]) {
@@ -333,13 +414,20 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
       weeklyMap[startDate].projectDetailsMap[e.project_id] = {
         project_id: e.project_id,
         nama_proyek: prjNama,
-        tarif_snapshot: Number(e.tarif_snapshot),
+        tarif_snapshot: tarif,
         total_pcs: 0,
         subtotal: 0,
+        ratesMap: {},
       };
     }
-    weeklyMap[startDate].projectDetailsMap[e.project_id].total_pcs += q;
-    weeklyMap[startDate].projectDetailsMap[e.project_id].subtotal += wage;
+    const pd = weeklyMap[startDate].projectDetailsMap[e.project_id];
+    pd.total_pcs += q;
+    pd.subtotal += wage;
+    if (!pd.ratesMap[tarif]) {
+      pd.ratesMap[tarif] = { tarif, pcs: 0, subtotal: 0 };
+    }
+    pd.ratesMap[tarif].pcs += q;
+    pd.ratesMap[tarif].subtotal += wage;
 
     // Rincian harian
     weeklyMap[startDate].dailyDetails.push({
@@ -347,7 +435,7 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
       tanggal_kerja: e.tanggal_kerja,
       nama_proyek: prjNama,
       qty_disetujui: q,
-      tarif_snapshot: Number(e.tarif_snapshot),
+      tarif_snapshot: tarif,
       subtotal: wage,
     });
   });
@@ -377,6 +465,21 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
       );
       const sisa = Math.max(0, w.total_upah - paidInfo.total);
 
+      const projectDetails: WagePaymentProjectDetail[] = Object.values(w.projectDetailsMap).map((pd) => {
+        const rincianTarif = Object.values(pd.ratesMap).sort((a, b) => a.tarif - b.tarif);
+        return {
+          project_id: pd.project_id,
+          nama_proyek: pd.nama_proyek,
+          tarif_snapshot: pd.tarif_snapshot,
+          total_pcs: pd.total_pcs,
+          subtotal: pd.subtotal,
+          tarif_min: rincianTarif[0]?.tarif ?? pd.tarif_snapshot,
+          tarif_max: rincianTarif[rincianTarif.length - 1]?.tarif ?? pd.tarif_snapshot,
+          tarif_rata_rata: pd.total_pcs > 0 ? Math.round(pd.subtotal / pd.total_pcs) : pd.tarif_snapshot,
+          rincian_tarif: rincianTarif,
+        };
+      });
+
       return {
         week_start: w.week_start,
         week_end: w.week_end,
@@ -386,7 +489,7 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
         sisa,
         status_pembayaran: statusPembayaran,
         tanggal_bayar_terakhir: paidInfo.lastDate,
-        project_details: Object.values(w.projectDetailsMap),
+        project_details: projectDetails,
         daily_details: w.dailyDetails.sort((a, b) => b.tanggal_kerja.localeCompare(a.tanggal_kerja)),
       };
     });
@@ -402,9 +505,7 @@ export default async function PenjahitDetailPage({ params }: PageProps) {
   }> = [];
 
   for (let i = 7; i >= 0; i--) {
-    const d = new Date(currentWeekStart);
-    d.setDate(d.getDate() - i * 7);
-    const dateStr = d.toISOString().split("T")[0];
+    const dateStr = addDays(currentWeekStart, -i * 7);
     const { startDate, endDate } = getWeekDateRange(dateStr);
 
     const weekItem = weeklyMap[startDate];

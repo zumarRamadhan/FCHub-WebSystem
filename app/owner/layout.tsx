@@ -10,6 +10,7 @@ import {
   Briefcase,
   Users,
   Calendar,
+  Package,
   LogOut,
   Shield,
 } from "lucide-react";
@@ -26,6 +27,7 @@ const ownerNavItems = [
   { href: "/owner/approval", label: "Approval", icon: CheckSquare },
   { href: "/owner/rekap", label: "Rekap Upah", icon: FileSpreadsheet },
   { href: "/owner/proyek", label: "Proyek", icon: Briefcase },
+  { href: "/owner/stok", label: "Stok", icon: Package },
   { href: "/owner/kalender", label: "Kalender", icon: Calendar },
   { href: "/owner/penjahit", label: "Penjahit", icon: Users },
 ];

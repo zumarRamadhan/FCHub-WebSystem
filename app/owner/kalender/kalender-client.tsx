@@ -498,8 +498,7 @@ export function KalenderClient({
 
           {/* Hari dalam Bulan */}
           {monthDays.map((day) => {
-            const dateObj = new Date(day.tanggal);
-            const dayNum = dateObj.getDate();
+            const dayNum = Number(day.tanggal.split("-")[2]) || 1;
             const isToday = day.tanggal === todayStr;
             const isHoliday = !day.is_hari_kerja;
             const hasProduction = day.total_pcs_disetujui > 0 || day.total_pcs_menunggu > 0;

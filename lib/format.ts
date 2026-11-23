@@ -68,3 +68,39 @@ export function getJakartaNow(): Date {
   const jakartaString = now.toLocaleString("en-US", { timeZone: JAKARTA_TIMEZONE });
   return new Date(jakartaString);
 }
+
+/**
+ * Format standar perhitungan upah (Tahap Transparansi Tarif):
+ * "{pcs} pcs × Rp{tarif} = Rp{subtotal}"
+ * Contoh: "150 pcs × Rp500 = Rp75.000"
+ */
+export function formatWageCalculation(
+  pcs: number,
+  tarif: number,
+  subtotal?: number
+): string {
+  const finalSubtotal = subtotal !== undefined ? subtotal : pcs * tarif;
+  return `${formatNumber(pcs)} pcs × ${formatRupiah(tarif)} = ${formatRupiah(finalSubtotal)}`;
+}
+
+/**
+ * Format tarif per pcs:
+ * "Rp{tarif}/pcs"
+ * Contoh: "Rp500/pcs"
+ */
+export function formatTarifPerPcs(tarif: number): string {
+  return `${formatRupiah(tarif)}/pcs`;
+}
+
+/**
+ * Format label ringkasan multi-tarif jika ada lebih dari 1 tarif:
+ * "{count} tarif (rata-rata Rp{avg}/pcs)"
+ * Contoh: "2 tarif (rata-rata Rp533/pcs)"
+ */
+export function formatMultiTarifSummary(
+  count: number,
+  avgTarif: number
+): string {
+  return `${count} tarif (rata-rata ${formatTarifPerPcs(Math.round(avgTarif))})`;
+}
+

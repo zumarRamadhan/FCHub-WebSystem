@@ -8,6 +8,7 @@ import {
   Check,
   Layers,
   X,
+  MinusCircle,
 } from "lucide-react";
 import { formatNumber } from "@/lib/format";
 import { getProjectColor } from "@/lib/project-colors";
@@ -30,6 +31,8 @@ export interface ProjectSelectProps {
   className?: string;
   placeholder?: string;
   allOptionLabel?: string;
+  includeNoneOption?: boolean;
+  noneOptionLabel?: string;
 }
 
 export function ProjectSelect({
@@ -40,6 +43,8 @@ export function ProjectSelect({
   className = "",
   placeholder = "Pilih Proyek",
   allOptionLabel = "Semua proyek",
+  includeNoneOption = false,
+  noneOptionLabel = "Tanpa proyek",
 }: ProjectSelectProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -55,7 +60,7 @@ export function ProjectSelect({
 
   // Proyek terpilih saat ini
   const currentSelectedProject = React.useMemo(() => {
-    if (!selectedProjectId || selectedProjectId === "all") return null;
+    if (!selectedProjectId || selectedProjectId === "all" || selectedProjectId === "none") return null;
     return projects.find((p) => p.id === selectedProjectId) || null;
   }, [projects, selectedProjectId]);
 
@@ -76,22 +81,31 @@ export function ProjectSelect({
   }, [filteredProjects]);
 
   // Bangun daftar opsi datar untuk navigasi keyboard
-  // Index 0: Opsi "Semua proyek" (jika cocok pencarian), diikuti activeProjects, lalu completedProjects
   const isAllOptionVisible = React.useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return true;
     return allOptionLabel.toLowerCase().includes(q) || "semua proyek".includes(q);
   }, [searchQuery, allOptionLabel]);
 
+  const isNoneOptionVisible = React.useMemo(() => {
+    if (!includeNoneOption) return false;
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return noneOptionLabel.toLowerCase().includes(q) || "tanpa proyek".includes(q);
+  }, [includeNoneOption, searchQuery, noneOptionLabel]);
+
   const flatOptions = React.useMemo(() => {
     const items: Array<{ id: string; nama: string }> = [];
     if (isAllOptionVisible) {
       items.push({ id: "all", nama: allOptionLabel });
     }
+    if (isNoneOptionVisible) {
+      items.push({ id: "none", nama: noneOptionLabel });
+    }
     activeProjects.forEach((p) => items.push({ id: p.id, nama: p.nama }));
     completedProjects.forEach((p) => items.push({ id: p.id, nama: p.nama }));
     return items;
-  }, [isAllOptionVisible, activeProjects, completedProjects, allOptionLabel]);
+  }, [isAllOptionVisible, isNoneOptionVisible, activeProjects, completedProjects, allOptionLabel, noneOptionLabel]);
 
   // Fokus otomatis kolom pencarian saat panel dibuka
   React.useEffect(() => {
@@ -226,6 +240,8 @@ export function ProjectSelect({
                 aria-hidden="true"
               />
             )
+          ) : selectedProjectId === "none" ? (
+            <MinusCircle className="w-4 h-4 text-muted shrink-0" aria-hidden="true" />
           ) : (
             <Layers className="w-4 h-4 text-forest-900 shrink-0" aria-hidden="true" />
           )}
@@ -234,6 +250,8 @@ export function ProjectSelect({
             <span className="block text-[13.5px] font-semibold text-ink truncate">
               {currentSelectedProject
                 ? currentSelectedProject.nama
+                : selectedProjectId === "none"
+                ? noneOptionLabel
                 : selectedProjectId === "all" || !selectedProjectId
                 ? allOptionLabel
                 : placeholder}
@@ -357,6 +375,39 @@ export function ProjectSelect({
                     </div>
 
                     {(selectedProjectId === "all" || !selectedProjectId) && (
+                      <Check className="w-4 h-4 text-positive shrink-0" />
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* Opsi Tambahan: "Tanpa proyek" (jika diaktifkan) */}
+              {isNoneOptionVisible && (
+                <div className="pb-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSelect("none")}
+                    className={`w-full px-3 py-2.5 rounded-[12px] text-left transition flex items-center justify-between gap-2.5 ${
+                      selectedProjectId === "none"
+                        ? "bg-lime-50 text-forest-900 font-semibold border border-lime-200"
+                        : "text-ink hover:bg-surface-muted"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+                        <MinusCircle className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-[13.5px] font-semibold block truncate">
+                          {noneOptionLabel}
+                        </span>
+                        <span className="text-[11px] text-muted block">
+                          Barang tanpa kaitan proyek tertentu
+                        </span>
+                      </div>
+                    </div>
+
+                    {selectedProjectId === "none" && (
                       <Check className="w-4 h-4 text-positive shrink-0" />
                     )}
                   </button>

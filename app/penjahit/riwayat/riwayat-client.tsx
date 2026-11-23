@@ -17,7 +17,13 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge, EntryStatus } from "@/components/ui/status-badge";
 import { Dialog } from "@/components/ui/dialog";
 import { SegmentedPill, SegmentedOption } from "@/components/ui/segmented-pill";
-import { formatNumber, formatRupiah, formatDateId, getJakartaTodayString } from "@/lib/format";
+import {
+  formatNumber,
+  formatRupiah,
+  formatDateId,
+  getJakartaTodayString,
+  formatWageCalculation,
+} from "@/lib/format";
 import { updateEntryAction, deleteEntryAction } from "@/app/penjahit/actions";
 
 export interface PenjahitHistoryEntry {
@@ -257,14 +263,25 @@ export function RiwayatClient({ initialEntries, weekSummary }: RiwayatClientProp
                       {isApproved ? "Upah Disetujui:" : "Estimasi Upah:"}
                     </span>
                     <strong
-                      className={`text-[15px] font-semibold tabular-nums ${
-                        isApproved ? "text-forest-900" : isRejected ? "text-muted line-through" : "text-muted"
+                      className={`text-[15px] font-semibold tabular-nums block ${
+                        isApproved
+                          ? "text-forest-900"
+                          : isRejected
+                          ? "text-muted line-through"
+                          : "text-muted"
                       }`}
                     >
                       {formatRupiah(
                         (isApproved ? item.qty_disetujui || 0 : item.qty) * item.tarif_snapshot
                       )}
                     </strong>
+                    <span className="text-[11px] font-mono text-muted block tabular-nums mt-0.5">
+                      {formatWageCalculation(
+                        isApproved ? item.qty_disetujui || 0 : item.qty,
+                        item.tarif_snapshot,
+                        (isApproved ? item.qty_disetujui || 0 : item.qty) * item.tarif_snapshot
+                      )}
+                    </span>
                   </div>
                 </div>
 

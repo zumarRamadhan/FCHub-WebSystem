@@ -132,6 +132,14 @@ Aturan ini adalah inti sistem. Jangan dilanggar atau diubah tanpa persetujuan ek
    - Perkiraan selesai proyek dan penentuan penjahit "belum input" wajib memakai satu sumber kebenaran fungsi database (`is_hari_kerja` dan `hitung_hari_kerja`), melompati hari libur.
    - Setiap proyek memiliki warna indikator dari palet terbatas 8 warna (`p1` sampai `p8`) yang disimpan di `projects.warna`. Indikator visual tidak boleh hanya mengandalkan warna, melainkan selalu disertai nama atau inisial proyek.
    - Kalender kerja dan penanda lembur **tidak memengaruhi rumus upah** (tetap `qty_disetujui × tarif_snapshot`).
+21. **Rekap upah periode bebas dan laporan pengeluaran upah (bulanan & tahunan)**:
+   - **Pengeluaran upah** = jumlah `qty_disetujui × tarif_snapshot` dari entri berstatus `disetujui`, dikelompokkan menurut `tanggal_kerja`, bukan tanggal bayar.
+   - **Sudah dibayar** = jumlah pembayaran aktif (`status = 'dibayar'`) yang tercatat di tabel `wage_payments` pada periode tanggal tersebut.
+   - **Belum dibayar** = sisa selisih pembayaran dari view/fungsi status upah untuk minggu-minggu yang beririsan dengan periode laporan.
+   - **Laporan bulanan dan tahunan** memakai `tanggal_kerja` per hari, sehingga minggu yang melewati batas pergantian bulan terbagi ke dalam dua bulan (disengaja, wajib menampilkan catatan penjelasan di UI).
+   - **Bonus reward dan kasbon** BELUM termasuk dalam angka pengeluaran upah ini (wajib menampilkan catatan keterangan di UI laporan).
+   - **Mode bulanan, tahunan, dan kustom bersifat laporan (hanya baca)**: tombol aksi "Tandai dibayar" dan "Tandai semua dibayar" HANYA tersedia pada mode mingguan.
+   - **Semua agregasi dihitung di sisi database (fungsi SQL)**, bukan dihitung secara manual di komponen antarmuka, untuk menjaga konsistensi dan performa cepat pada rentang hingga 1-5 tahun.
 
 Pertanyaan yang masih terbuka (jangan berasumsi di kode tanpa menandainya dengan `TODO(owner)`): apakah ada tahap kerja dengan tarif berbeda, apakah tarif sama untuk semua penjahit dalam satu proyek, apakah satu penjahit boleh input lebih dari sekali sehari.
 

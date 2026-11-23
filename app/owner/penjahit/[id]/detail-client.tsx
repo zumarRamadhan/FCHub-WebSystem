@@ -19,10 +19,18 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { formatNumber, formatRupiah, formatDateId } from "@/lib/format";
+import {
+  formatNumber,
+  formatRupiah,
+  formatDateId,
+  formatWageCalculation,
+  formatTarifPerPcs,
+  formatMultiTarifSummary,
+} from "@/lib/format";
 import { getPaymentStatusBadgeInfo } from "@/lib/wage";
 import { WeeklyWagePaymentStatus, WagePaymentProjectDetail } from "@/lib/types/database";
 import { markWagePaidAction } from "@/app/owner/rekap/actions";
+import { addDays, getTodayJakarta } from "@/lib/dates";
 
 export interface TailorDetailData {
   penjahit: {
@@ -53,6 +61,11 @@ export interface TailorDetailData {
     ambang_reward: number;
     tanggal_pertama_kerja: string;
     tanggal_terakhir_kerja: string;
+    tarif_per_pcs?: number;
+    tarif_min?: number;
+    tarif_max?: number;
+    tarif_rata_rata?: number;
+    rincian_tarif?: Array<{ tarif: number; pcs: number; subtotal: number }>;
   }>;
   weeklyHistory: Array<{
     week_start: string;
@@ -110,6 +123,8 @@ export function PenjahitDetailClient({ data }: DetailProps) {
 
   // State Accordion Minggu Terbuka
   const [expandedWeeks, setExpandedWeeks] = React.useState<Record<string, boolean>>({});
+  // State Accordion Rincian Multi-Tarif Proyek Terbuka
+  const [expandedProjectRates, setExpandedProjectRates] = React.useState<Record<string, boolean>>({});
 
   // State Modal Bayar Sisa
   const [payTargetWeek, setPayTargetWeek] = React.useState<{
@@ -164,9 +179,7 @@ export function PenjahitDetailClient({ data }: DetailProps) {
   };
 
   // Filter Proyek & Histori Mingguan
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split("T")[0];
+  const thirtyDaysAgoStr = addDays(getTodayJakarta(), -30);
 
   const filteredProjects = projects.filter((p) => {
     if (selectedProjectId !== "all" && p.project_id !== selectedProjectId) return false;
@@ -558,26 +571,102 @@ export function PenjahitDetailClient({ data }: DetailProps) {
                     ) : null}
                   </div>
 
-                  {/* Metrik Pcs & Upah */}
-                  <div className="grid grid-cols-2 gap-2 my-2.5 p-2.5 bg-surface-muted rounded-panel text-[12px]">
-                    <div>
-                      <span className="text-[11px] text-muted block">Hasil Kerja:</span>
-                      <strong className="text-positive text-[15px] font-bold tabular-nums block">
-                        {formatNumber(prj.total_pcs)} pcs
-                      </strong>
-                      <span className="text-[10.5px] text-muted">
-                        Kontribusi {prj.persen_kontribusi}% proyek
-                      </span>
-                    </div>
+                  {/* Metrik Pcs & Upah dengan Transparansi Tarif */}
+                  {(() => {
+                    const rincianTarif = prj.rincian_tarif || [];
+                    const isMultiTarif = rincianTarif.length > 1;
+                    const avgTarif =
+                      prj.tarif_rata_rata ??
+                      (prj.total_pcs > 0 ? Math.round(prj.total_upah / prj.total_pcs) : 500);
+                    const singleTarif = rincianTarif[0]?.tarif ?? prj.tarif_per_pcs ?? 500;
+                    const isExpandedRates = !!expandedProjectRates[prj.project_id];
 
-                    <div className="text-right">
-                      <span className="text-[11px] text-muted block">Total Upah:</span>
-                      <strong className="text-forest-900 text-[15px] font-bold tabular-nums block">
-                        {formatRupiah(prj.total_upah)}
-                      </strong>
-                      <span className="text-[10.5px] text-muted">Disetujui</span>
-                    </div>
-                  </div>
+                    return (
+                      <div className="my-2.5 p-2.5 bg-surface-muted rounded-panel text-[12px] space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <span className="text-[11px] text-muted block">Hasil Kerja:</span>
+                            <strong className="text-positive text-[15px] font-bold tabular-nums block">
+                              {formatNumber(prj.total_pcs)} pcs
+                            </strong>
+                            <div className="text-[11px] font-medium text-ink mt-0.5">
+                              Tarif:{" "}
+                              {isMultiTarif ? (
+                                <span className="font-semibold text-forest-900">
+                                  {formatMultiTarifSummary(rincianTarif.length, avgTarif)}
+                                </span>
+                              ) : (
+                                <span className="font-mono font-semibold text-forest-900">
+                                  {formatTarifPerPcs(singleTarif)}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10.5px] text-muted block mt-0.5">
+                              Kontribusi {prj.persen_kontribusi}% proyek
+                            </span>
+                          </div>
+
+                          <div className="text-right flex flex-col justify-between">
+                            <div>
+                              <span className="text-[11px] text-muted block">Total Upah:</span>
+                              <strong className="text-forest-900 text-[15px] font-bold tabular-nums block">
+                                {formatRupiah(prj.total_upah)}
+                              </strong>
+                              {!isMultiTarif ? (
+                                <span className="text-[11px] font-mono text-muted block mt-0.5 tabular-nums">
+                                  {formatWageCalculation(prj.total_pcs, singleTarif, prj.total_upah)}
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedProjectRates((prev) => ({
+                                      ...prev,
+                                      [prj.project_id]: !prev[prj.project_id],
+                                    }))
+                                  }
+                                  className="text-[11px] text-forest-900 font-semibold underline hover:text-ink mt-0.5 inline-flex items-center gap-0.5"
+                                >
+                                  <span>
+                                    {isExpandedRates ? "Tutup rincian" : "Lihat rincian tarif"}
+                                  </span>
+                                  {isExpandedRates ? (
+                                    <ChevronUp className="w-3 h-3" />
+                                  ) : (
+                                    <ChevronDown className="w-3 h-3" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                            <span className="text-[10.5px] text-muted">Disetujui</span>
+                          </div>
+                        </div>
+
+                        {/* Rincian Multi-Tarif Accordion */}
+                        {isMultiTarif && isExpandedRates && (
+                          <div className="pt-2 border-t border-line/60 space-y-1 bg-surface p-2 rounded-panel">
+                            <span className="text-[10.5px] font-semibold text-muted uppercase block mb-1">
+                              Rincian Tarif Berbeda:
+                            </span>
+                            {rincianTarif.map((rt) => (
+                              <div
+                                key={rt.tarif}
+                                className="flex items-center justify-between text-[11px] font-mono text-ink py-0.5"
+                              >
+                                <span>
+                                  {formatWageCalculation(rt.pcs, rt.tarif, rt.subtotal)}
+                                </span>
+                              </div>
+                            ))}
+                            <div className="pt-1 border-t border-line/40 flex justify-between text-[11px] font-bold text-forest-900">
+                              <span>Total Subtotal:</span>
+                              <span>{formatRupiah(prj.total_upah)}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Tanggal Mulai & Terakhir */}
@@ -691,8 +780,8 @@ export function PenjahitDetailClient({ data }: DetailProps) {
                                   <strong className="text-ink block text-[13px]">
                                     {pd.nama_proyek}
                                   </strong>
-                                  <span className="text-muted text-[11px]">
-                                    {pd.total_pcs} pcs × {formatRupiah(pd.tarif_snapshot)}
+                                  <span className="text-muted text-[11px] font-mono">
+                                    {formatWageCalculation(pd.total_pcs, pd.tarif_snapshot, pd.subtotal)}
                                   </span>
                                 </div>
                                 <span className="font-semibold text-forest-900 tabular-nums text-[13px]">
@@ -717,7 +806,7 @@ export function PenjahitDetailClient({ data }: DetailProps) {
                                   <th className="py-1.5 px-3">Tanggal</th>
                                   <th className="py-1.5 px-3">Proyek</th>
                                   <th className="py-1.5 px-3 text-right">Pcs Disetujui</th>
-                                  <th className="py-1.5 px-3 text-right">Upah</th>
+                                  <th className="py-1.5 px-3 text-right">Upah (Perhitungan)</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-line/60">
@@ -733,7 +822,9 @@ export function PenjahitDetailClient({ data }: DetailProps) {
                                       {formatNumber(day.qty_disetujui)}
                                     </td>
                                     <td className="py-1.5 px-3 text-right font-semibold text-forest-900 tabular-nums">
-                                      {formatRupiah(day.subtotal)}
+                                      <span className="font-mono text-[11px]">
+                                        {formatWageCalculation(day.qty_disetujui, day.tarif_snapshot, day.subtotal)}
+                                      </span>
                                     </td>
                                   </tr>
                                 ))}
@@ -846,6 +937,20 @@ export function PenjahitDetailClient({ data }: DetailProps) {
                     </span>
                   </div>
 
+                  {/* Rincian Perhitungan Upah Proyek per Pembayaran */}
+                  {pay.rincian && pay.rincian.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-line/50 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] font-mono">
+                      {pay.rincian.map((r, rIdx) => (
+                        <div key={rIdx} className="text-muted flex justify-between">
+                          <span className="font-sans font-medium text-ink">{r.nama_proyek}:</span>
+                          <span className="text-forest-900 font-semibold">
+                            {formatWageCalculation(r.total_pcs, r.tarif_snapshot, r.subtotal)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {pay.catatan && (
                     <p className="text-[12px] text-ink mt-2 bg-surface-muted p-2 rounded-panel">
                       <strong className="text-muted">Catatan:</strong> {pay.catatan}
@@ -900,6 +1005,26 @@ export function PenjahitDetailClient({ data }: DetailProps) {
                 <span className="font-semibold">{formatNumber(payTargetWeek.total_pcs)} pcs</span>
               </div>
             </div>
+
+            {/* Rincian Upah per Proyek dengan Formula Standar */}
+            {payTargetWeek.project_details && payTargetWeek.project_details.length > 0 && (
+              <div className="p-3 bg-surface rounded-panel border border-line space-y-1">
+                <span className="text-[11px] font-bold text-muted uppercase block mb-1">
+                  Rincian Upah per Proyek:
+                </span>
+                {payTargetWeek.project_details.map((pd) => (
+                  <div
+                    key={pd.project_id}
+                    className="flex justify-between items-center text-[12px] font-mono"
+                  >
+                    <span className="text-ink font-sans">{pd.nama_proyek}</span>
+                    <span className="text-forest-900 font-semibold">
+                      {formatWageCalculation(pd.total_pcs, pd.tarif_snapshot, pd.subtotal)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Nominal Pembayaran Sisa */}
             <div className="p-3.5 bg-lime-100/60 rounded-panel border border-lime-300/80 flex items-center justify-between">

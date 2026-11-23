@@ -38,12 +38,23 @@ export default async function PenjahitBerandaPage() {
 
   let pcsDisetujuiMingguIni = 0;
   let upahMingguIni = 0;
+  const weekRatesMap: Record<number, { tarif: number; pcs: number; subtotal: number }> = {};
 
   (weekEntries || []).forEach((e) => {
     const qty = Number(e.qty_disetujui || 0);
+    const tarif = Number(e.tarif_snapshot || 500);
     pcsDisetujuiMingguIni += qty;
-    upahMingguIni += calculateEntryWage("disetujui", qty, Number(e.tarif_snapshot || 500));
+    const wage = calculateEntryWage("disetujui", qty, tarif);
+    upahMingguIni += wage;
+
+    if (!weekRatesMap[tarif]) {
+      weekRatesMap[tarif] = { tarif, pcs: 0, subtotal: 0 };
+    }
+    weekRatesMap[tarif].pcs += qty;
+    weekRatesMap[tarif].subtotal += wage;
   });
+
+  const weekRates = Object.values(weekRatesMap).sort((a, b) => a.tarif - b.tarif);
 
   // 2b. Query status pembayaran tunai minggu berjalan dari wage_payments
   let paymentInfo: { isPaid: boolean; paidAt?: string } = { isPaid: false };
@@ -176,6 +187,7 @@ export default async function PenjahitBerandaPage() {
       paymentInfo={paymentInfo}
       rewardProgressList={rewardProgressList}
       recentEntries={recentEntries}
+      weekRates={weekRates}
     />
   );
 }

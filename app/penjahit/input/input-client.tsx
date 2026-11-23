@@ -14,7 +14,13 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { NumberInput } from "@/components/ui/number-input";
 import { SegmentedPill, SegmentedOption } from "@/components/ui/segmented-pill";
-import { formatRupiah, getJakartaTodayString, formatDateId } from "@/lib/format";
+import {
+  formatRupiah,
+  getJakartaTodayString,
+  formatDateId,
+  formatWageCalculation,
+  formatTarifPerPcs,
+} from "@/lib/format";
 import { createEntryAction } from "@/app/penjahit/actions";
 
 export interface ActiveProject {
@@ -322,8 +328,8 @@ export function InputClient({
                   3. Jumlah Selesai (Pcs)
                 </label>
                 {currentProject && (
-                  <span className="text-[12px] font-medium text-forest-900">
-                    Tarif: {formatRupiah(currentProject.tarif_per_pcs)} / pcs
+                  <span className="text-[12px] font-medium text-forest-900 font-mono">
+                    Tarif: {formatTarifPerPcs(currentProject.tarif_per_pcs)}
                   </span>
                 )}
               </div>
@@ -338,7 +344,16 @@ export function InputClient({
 
               {/* Estimasi Upah jika disetujui */}
               <div className="mt-3 flex items-center justify-between p-3 rounded-panel bg-surface-muted border border-line/60 text-[13px]">
-                <span className="text-muted">Estimasi Upah:</span>
+                <div>
+                  <span className="text-muted block text-[11px]">Estimasi Upah:</span>
+                  <span className="text-[11px] font-mono text-muted">
+                    {formatWageCalculation(
+                      qty,
+                      currentProject?.tarif_per_pcs || 500,
+                      qty * (currentProject?.tarif_per_pcs || 500)
+                    )}
+                  </span>
+                </div>
                 <strong className="text-forest-900 font-semibold text-[15px] tabular-nums">
                   {formatRupiah(qty * (currentProject?.tarif_per_pcs || 500))}
                 </strong>

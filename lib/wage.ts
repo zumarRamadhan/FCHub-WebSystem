@@ -14,6 +14,7 @@
  */
 
 import { DbProductionEntry, WeeklyWagePaymentStatus } from "./types/database";
+import { addDays, getTodayJakarta, getWeekRangeUtc } from "./dates";
 
 /**
  * Konfigurasi Siklus Rekap Mingguan.
@@ -92,27 +93,17 @@ export function isThresholdReached(
 /**
  * Mendapatkan rentang tanggal awal (Senin) dan akhir (Minggu) dari suatu tanggal,
  * selaras dengan fungsi public.get_week_start() dan public.get_week_end() di Postgres.
+ * Menggunakan kalkulasi murni UTC untuk mencegah pergeseran tanggal akibat zona waktu perangkat.
  */
-export function getWeekDateRange(dateInput: Date | string = new Date()): {
+export function getWeekDateRange(dateInput: Date | string = getTodayJakarta()): {
   startDate: string;
   endDate: string;
 } {
-  const d = typeof dateInput === "string" ? new Date(dateInput) : new Date(dateInput);
-  const day = d.getDay(); // 0 = Minggu, 1 = Senin, ...
-  const diffToMonday = day === 0 ? -6 : 1 - day;
-
-  const monday = new Date(d);
-  monday.setDate(d.getDate() + diffToMonday);
-
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-
-  const toYMD = (target: Date) => target.toISOString().split("T")[0];
-
-  return {
-    startDate: toYMD(monday),
-    endDate: toYMD(sunday),
-  };
+  const dateStr =
+    typeof dateInput === "string"
+      ? dateInput.split("T")[0]
+      : getTodayJakarta();
+  return getWeekRangeUtc(dateStr);
 }
 
 export interface WeekOption {
@@ -127,11 +118,10 @@ export interface WeekOption {
  */
 export function getRecentWeekOptions(count: number = 4): WeekOption[] {
   const options: WeekOption[] = [];
-  const now = new Date();
+  const todayStr = getTodayJakarta();
 
   for (let i = 0; i < count; i++) {
-    const targetDate = new Date(now);
-    targetDate.setDate(now.getDate() - i * 7);
+    const targetDate = addDays(todayStr, -i * 7);
     const { startDate, endDate } = getWeekDateRange(targetDate);
 
     let label = "";
@@ -152,6 +142,90 @@ export function getRecentWeekOptions(count: number = 4): WeekOption[] {
   }
 
   return options;
+}
+
+/**
+ * Menggeser minggu ke depan (+deltaWeeks) atau ke belakang (-deltaWeeks) tanpa batas.
+ */
+export function shiftWeek(
+  currentWeekStartDate: string,
+  deltaWeeks: number
+): { startDate: string; endDate: string } {
+  const targetDate = addDays(currentWeekStartDate, deltaWeeks * 7);
+  return getWeekRangeUtc(targetDate);
+}
+
+/**
+ * Rentang tanggal awal sampai akhir untuk suatu bulan tertentu (1-12)
+ */
+export function getMonthDateRange(
+  year: number,
+  month: number
+): { startDate: string; endDate: string } {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    startDate: `${year}-${pad(month)}-01`,
+    endDate: `${year}-${pad(month)}-${pad(lastDay)}`,
+  };
+}
+
+/**
+ * Rentang tanggal awal sampai akhir untuk suatu tahun tertentu
+ */
+export function getYearDateRange(
+  year: number
+): { startDate: string; endDate: string } {
+  return {
+    startDate: `${year}-01-01`,
+    endDate: `${year}-12-31`,
+  };
+}
+
+export type PresetRangeType =
+  | "bulan-ini"
+  | "bulan-lalu"
+  | "3-bulan"
+  | "tahun-ini"
+  | "12-bulan";
+
+/**
+ * Menghitung rentang tanggal berdasarkan pintasan preset
+ */
+export function getPresetDateRange(preset: PresetRangeType): {
+  startDate: string;
+  endDate: string;
+} {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const toYMD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  if (preset === "bulan-ini") {
+    return getMonthDateRange(now.getFullYear(), now.getMonth() + 1);
+  }
+
+  if (preset === "bulan-lalu") {
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return getMonthDateRange(prevMonthDate.getFullYear(), prevMonthDate.getMonth() + 1);
+  }
+
+  if (preset === "3-bulan") {
+    const start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { startDate: toYMD(start), endDate: toYMD(end) };
+  }
+
+  if (preset === "tahun-ini") {
+    return getYearDateRange(now.getFullYear());
+  }
+
+  if (preset === "12-bulan") {
+    const start = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { startDate: toYMD(start), endDate: toYMD(end) };
+  }
+
+  return getMonthDateRange(now.getFullYear(), now.getMonth() + 1);
 }
 
 export interface ProjectCompletionEstimate {

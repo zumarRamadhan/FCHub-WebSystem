@@ -19,7 +19,12 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { formatNumber, formatRupiah, formatDateId } from "@/lib/format";
+import {
+  formatNumber,
+  formatDateId,
+  formatWageCalculation,
+  formatTarifPerPcs,
+} from "@/lib/format";
 import { EntryFlagItem } from "@/lib/types/database";
 import { ProjectSelect, ProjectSelectItem } from "@/components/project-select";
 import {
@@ -646,8 +651,14 @@ export function ApprovalClient({
                               <span className="text-[17px] font-semibold text-ink tabular-nums block leading-tight">
                                 {formatNumber(item.qty)} pcs
                               </span>
-                              <span className="text-[11px] text-muted block">
-                                {formatRupiah(item.qty * item.tarif_per_pcs)}
+                              <span className="text-[11px] text-muted block mt-0.5">
+                                Tarif proyek: {formatTarifPerPcs(item.tarif_per_pcs)}
+                              </span>
+                              <span className="text-[11px] font-mono text-forest-900 font-semibold block">
+                                {formatWageCalculation(item.qty, item.tarif_per_pcs)}
+                              </span>
+                              <span className="text-[10px] text-muted/80 block italic">
+                                (tarif snapshot saat input dibuat)
                               </span>
                             </div>
 
@@ -734,17 +745,26 @@ export function ApprovalClient({
 
         {correctingItem && (
           <form onSubmit={handleCorrectionSubmit} className="space-y-4">
-            {/* Info Angka Asli Penjahit */}
+            {/* Info Angka Asli Penjahit & Tarif Proyek */}
             <div className="p-3 bg-surface-muted rounded-panel border border-line flex items-center justify-between text-[13px]">
               <div>
                 <span className="text-muted block text-[11px]">Jumlah Input Penjahit (Asli):</span>
                 <strong className="text-ink font-semibold text-[16px] tabular-nums">
                   {formatNumber(correctingItem.qty)} pcs
                 </strong>
+                <span className="text-[11px] font-mono text-muted block mt-0.5">
+                  Nilai awal: {formatWageCalculation(correctingItem.qty, correctingItem.tarif_per_pcs)}
+                </span>
               </div>
-              <span className="text-[11px] text-muted italic">
-                *Angka asli tidak tertimpa
-              </span>
+              <div className="text-right">
+                <span className="text-[11px] text-muted block">Tarif Proyek:</span>
+                <strong className="text-forest-900 font-mono text-[13px]">
+                  {formatTarifPerPcs(correctingItem.tarif_per_pcs)}
+                </strong>
+                <span className="text-[10px] text-muted block italic">
+                  (tarif snapshot)
+                </span>
+              </div>
             </div>
 
             {/* Input Jumlah Disetujui */}
@@ -760,8 +780,8 @@ export function ApprovalClient({
                 onChange={(e) => setCorrectedQty(Number(e.target.value))}
                 className="w-full h-12 px-4 rounded-control bg-surface-muted border border-line text-ink text-[18px] font-semibold tabular-nums focus:outline-none focus:border-forest-900"
               />
-              <p className="text-[11px] text-muted mt-1">
-                Upah akhir: {formatRupiah(correctedQty * correctingItem.tarif_per_pcs)}
+              <p className="text-[11.5px] font-mono text-forest-900 font-semibold mt-1.5 tabular-nums">
+                Estimasi upah baru: {formatWageCalculation(correctedQty, correctingItem.tarif_per_pcs)}
               </p>
             </div>
 

@@ -17,7 +17,13 @@ import { Button } from "@/components/ui/button";
 import { RingProgress } from "@/components/ui/ring-progress";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { StatusBadge, EntryStatus } from "@/components/ui/status-badge";
-import { formatNumber, formatRupiah, formatDateId } from "@/lib/format";
+import {
+  formatNumber,
+  formatRupiah,
+  formatDateId,
+  formatWageCalculation,
+  formatMultiTarifSummary,
+} from "@/lib/format";
 
 export interface TailorRewardProgress {
   projectId: string;
@@ -48,6 +54,11 @@ export interface BerandaProps {
     tarif_snapshot: number;
     status: EntryStatus;
   }>;
+  weekRates?: Array<{
+    tarif: number;
+    pcs: number;
+    subtotal: number;
+  }>;
 }
 
 export function BerandaClient({
@@ -58,6 +69,7 @@ export function BerandaClient({
   paymentInfo,
   rewardProgressList = [],
   recentEntries,
+  weekRates = [],
 }: BerandaProps) {
   const percentageHariIni = Math.min(100, Math.round((pcsHariIni / targetHariIni) * 100));
 
@@ -89,6 +101,22 @@ export function BerandaClient({
                   {formatRupiah(upahMingguIni)}
                 </strong>
               </p>
+
+              {/* Formula Upah Standar */}
+              {pcsDisetujuiMingguIni > 0 && (
+                <span className="text-[12px] font-mono font-semibold text-forest-900 bg-surface-muted px-2 py-0.5 rounded-pill border border-line">
+                  {weekRates.length > 1
+                    ? formatMultiTarifSummary(
+                        weekRates.length,
+                        Math.round(upahMingguIni / pcsDisetujuiMingguIni)
+                      )
+                    : formatWageCalculation(
+                        pcsDisetujuiMingguIni,
+                        weekRates[0]?.tarif ?? 500,
+                        upahMingguIni
+                      )}
+                </span>
+              )}
 
               {/* Badge Status Pembayaran Tunai (Tahap 13) */}
               {paymentInfo?.isPaid ? (
@@ -280,13 +308,31 @@ export function BerandaClient({
                   <div className="flex items-center gap-3 shrink-0">
                     <div className="text-right">
                       {isApproved ? (
-                        <span className="text-[14px] font-semibold text-positive tabular-nums block">
-                          {formatNumber(item.qty_disetujui || 0)} pcs
-                        </span>
+                        <>
+                          <span className="text-[14px] font-semibold text-positive tabular-nums block">
+                            {formatNumber(item.qty_disetujui || 0)} pcs
+                          </span>
+                          <span className="text-[11px] font-mono text-forest-900 block">
+                            {formatWageCalculation(
+                              item.qty_disetujui || 0,
+                              item.tarif_snapshot,
+                              (item.qty_disetujui || 0) * item.tarif_snapshot
+                            )}
+                          </span>
+                        </>
                       ) : (
-                        <span className="text-[14px] font-semibold text-ink tabular-nums block">
-                          {formatNumber(item.qty)} pcs
-                        </span>
+                        <>
+                          <span className="text-[14px] font-semibold text-ink tabular-nums block">
+                            {formatNumber(item.qty)} pcs
+                          </span>
+                          <span className="text-[11px] font-mono text-muted block">
+                            {formatWageCalculation(
+                              item.qty,
+                              item.tarif_snapshot,
+                              item.qty * item.tarif_snapshot
+                            )}
+                          </span>
+                        </>
                       )}
                       {isCorrected && (
                         <span className="text-[10px] text-muted line-through block">
