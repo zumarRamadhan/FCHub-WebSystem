@@ -17,6 +17,9 @@ import { Button } from "@/components/ui/button";
 import { RingProgress } from "@/components/ui/ring-progress";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { StatusBadge, EntryStatus } from "@/components/ui/status-badge";
+import { DailyGreeting } from "@/components/mascot/DailyGreeting";
+import { Mascot } from "@/components/mascot/Mascot";
+import { TailorGreetingContext } from "@/lib/messages";
 import {
   formatNumber,
   formatRupiah,
@@ -59,6 +62,7 @@ export interface BerandaProps {
     pcs: number;
     subtotal: number;
   }>;
+  greetingContext?: TailorGreetingContext;
 }
 
 export function BerandaClient({
@@ -70,6 +74,7 @@ export function BerandaClient({
   rewardProgressList = [],
   recentEntries,
   weekRates = [],
+  greetingContext,
 }: BerandaProps) {
   const percentageHariIni = Math.min(100, Math.round((pcsHariIni / targetHariIni) * 100));
 
@@ -107,14 +112,14 @@ export function BerandaClient({
                 <span className="text-[12px] font-mono font-semibold text-forest-900 bg-surface-muted px-2 py-0.5 rounded-pill border border-line">
                   {weekRates.length > 1
                     ? formatMultiTarifSummary(
-                        weekRates.length,
-                        Math.round(upahMingguIni / pcsDisetujuiMingguIni)
-                      )
+                      weekRates.length,
+                      Math.round(upahMingguIni / pcsDisetujuiMingguIni)
+                    )
                     : formatWageCalculation(
-                        pcsDisetujuiMingguIni,
-                        weekRates[0]?.tarif ?? 500,
-                        upahMingguIni
-                      )}
+                      pcsDisetujuiMingguIni,
+                      weekRates[0]?.tarif ?? 500,
+                      upahMingguIni
+                    )}
                 </span>
               )}
 
@@ -149,6 +154,9 @@ export function BerandaClient({
           </Link>
         </div>
       </Card>
+
+      {/* Sapaan Hangat Maskot Fiko di atas Ring Target */}
+      {greetingContext && <DailyGreeting context={greetingContext} />}
 
       {/* 2. KARTU HARI INI: RingProgress terhadap Target 100 Pcs */}
       <Card className="p-5 sm:p-6 shadow-card flex flex-col items-center justify-center text-center">
@@ -205,25 +213,32 @@ export function BerandaClient({
               return (
                 <div key={rp.projectId} className={idx > 0 ? "pt-4" : ""}>
                   <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <div>
-                      <h4 className="text-[14px] font-semibold text-ink leading-snug">
-                        {rp.namaProyek}
-                      </h4>
-                      <p className="text-[12px] text-muted mt-0.5">
-                        {rp.isQualified ? (
-                          <span className="text-positive font-semibold">
-                            Kamu sudah melewati ambang reward ({formatNumber(rp.pcsDisetujui)} / {formatNumber(rp.ambangReward)} pcs)
-                          </span>
-                        ) : (
-                          <span>
-                            Tinggal{" "}
-                            <strong className="text-ink font-semibold">
-                              {formatNumber(rp.sisaPcs)} pcs
-                            </strong>{" "}
-                            lagi untuk reward proyek {rp.namaProyek}
-                          </span>
-                        )}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      {rp.isQualified ? (
+                        <Mascot pose="melampaui" size={44} animate={true} />
+                      ) : rp.sisaPcs > 0 && rp.sisaPcs <= Math.round(rp.ambangReward * 0.3) ? (
+                        <Mascot pose="ajakan" size={40} animate={true} />
+                      ) : null}
+                      <div>
+                        <h4 className="text-[14px] font-semibold text-ink leading-snug">
+                          {rp.namaProyek}
+                        </h4>
+                        <p className="text-[12px] text-muted mt-0.5">
+                          {rp.isQualified ? (
+                            <span className="text-positive font-semibold">
+                              Kamu sudah melewati ambang reward ({formatNumber(rp.pcsDisetujui)} / {formatNumber(rp.ambangReward)} pcs)!
+                            </span>
+                          ) : (
+                            <span>
+                              Tinggal{" "}
+                              <strong className="text-ink font-semibold">
+                                {formatNumber(rp.sisaPcs)} pcs
+                              </strong>{" "}
+                              lagi untuk reward proyek {rp.namaProyek}
+                            </span>
+                          )}
+                        </p>
+                      </div>
                     </div>
 
                     {rp.isQualified ? (

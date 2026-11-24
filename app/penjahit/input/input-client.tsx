@@ -1,14 +1,15 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
-  CheckCircle2,
   AlertCircle,
   Calendar,
   Layers,
   ArrowRight,
   Info,
   ChevronDown,
+  CheckCircle2,
 } from "lucide-react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,14 @@ import {
   formatWageCalculation,
   formatTarifPerPcs,
 } from "@/lib/format";
-import { createEntryAction } from "@/app/penjahit/actions";
+import { createEntryAction, getGreetingContextAction } from "@/app/penjahit/actions";
+import { DailyGreeting } from "@/components/mascot/DailyGreeting";
+import { Mascot } from "@/components/mascot/Mascot";
+import {
+  SubmissionCelebrationModal,
+  SubmissionCelebrationData,
+} from "@/components/mascot/SubmissionCelebrationModal";
+import { TailorGreetingContext, determineSubmissionCelebration } from "@/lib/messages";
 
 export interface ActiveProject {
   id: string;
@@ -33,6 +41,7 @@ export interface ActiveProject {
 interface InputClientProps {
   projects: ActiveProject[];
   initialLastUsedProjectId?: string;
+  initialGreetingContext?: TailorGreetingContext;
 }
 
 const LOCAL_STORAGE_LAST_PROJECT_KEY = "fchub_last_project_id";
@@ -40,6 +49,7 @@ const LOCAL_STORAGE_LAST_PROJECT_KEY = "fchub_last_project_id";
 export function InputClient({
   projects,
   initialLastUsedProjectId,
+  initialGreetingContext,
 }: InputClientProps) {
   const todayStr = getJakartaTodayString();
 
@@ -114,12 +124,34 @@ export function InputClient({
   const activeDate =
     dateMode === "hari-ini" ? todayStr : dateMode === "kemarin" ? yesterdayStr : customDate;
 
+  // Konteks Sapaan Maskot Fiko & Perayaan
+  const [greetingContext, setGreetingContext] = React.useState<TailorGreetingContext | undefined>(
+    initialGreetingContext
+  );
+  const [celebrationData, setCelebrationData] = React.useState<SubmissionCelebrationData | null>(null);
+  const [isCelebrationOpen, setIsCelebrationOpen] = React.useState<boolean>(false);
+
+  // Perbarui konteks sapaan saat tanggal kerja diubah
+  React.useEffect(() => {
+    let isMounted = true;
+    getGreetingContextAction(activeDate).then((res) => {
+      if (isMounted && res.success && res.data) {
+        setGreetingContext(res.data);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [activeDate]);
+
   // Nilai pcs default target harian = 100
   const [qty, setQty] = React.useState<number>(100);
 
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
-  const [toastMessage, setToastMessage] = React.useState<string | null>(null);
+  const [errorState, setErrorState] = React.useState<{
+    type: "validation" | "failed" | "duplicate";
+    message: string;
+  } | null>(null);
 
   // Proyek yang sedang dipilih
   const currentProject = projects.find((p) => p.id === selectedProjectId) || sortedProjects[0];
@@ -132,29 +164,53 @@ export function InputClient({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage(null);
+    setErrorState(null);
 
     if (!selectedProjectId) {
-      setErrorMessage("Silakan pilih proyek pengerjaan.");
+      setErrorState({ type: "validation", message: "Silakan pilih proyek pengerjaan." });
       return;
     }
 
     if (qty <= 0) {
-      setErrorMessage("Jumlah pcs harus lebih dari 0.");
+      setErrorState({ type: "validation", message: "Jumlah pcs harus lebih dari 0." });
       return;
     }
 
     setIsSubmitting(true);
 
+    const totalSebelumnya = greetingContext?.totalPcsHariIni || 0;
+    const targetHarian = greetingContext?.targetHarian || 100;
+    const inputQty = Number(qty);
+    const totalBaru = totalSebelumnya + inputQty;
+    const isFirstEntryToday = totalSebelumnya === 0;
+
     const result = await createEntryAction({
       project_id: selectedProjectId,
       tanggal_kerja: activeDate,
-      qty: Number(qty),
+      qty: inputQty,
     });
 
     if (!result.success) {
-      setErrorMessage(result.error || "Gagal mengirim hasil kerja.");
       setIsSubmitting(false);
+
+      if (result.alreadyRecorded) {
+        setErrorState({
+          type: "duplicate",
+          message: result.error || "Sepertinya input ini sudah tercatat",
+        });
+        // Kosongkan form agar tidak memicu duplikasi berulang
+        setQty(100);
+        return;
+      }
+
+      const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+      setErrorState({
+        type: "failed",
+        message: isOffline
+          ? "Sepertinya sinyal sedang putus. Isianmu aman, coba kirim lagi saat tersambung."
+          : (result.error || "Gagal terkirim. Isianmu aman, coba lagi."),
+      });
+      // Isian form tetap utuh (qty dipertahankan)
       return;
     }
 
@@ -165,16 +221,29 @@ export function InputClient({
       // Abaikan error localStorage
     }
 
-    // Sesuai design-fchub.md:
-    // Tampilkan toast "Terkirim, menunggu persetujuan" dan kolom angka dikosongkan
-    setToastMessage("Terkirim, menunggu persetujuan");
-    setQty(0);
-    setIsSubmitting(false);
+    // Tentukan perayaan maskot (perayaan penuh vs kompak)
+    const celebration = determineSubmissionCelebration({
+      qtyBaru: inputQty,
+      totalSebelumnya,
+      totalBaru,
+      targetHarian,
+      isFirstEntryToday,
+    });
 
-    // Hilangkan toast setelah 3.5 detik
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 3500);
+    setCelebrationData(celebration);
+    setIsCelebrationOpen(true);
+
+    // Update state konteks sapaan lokal agar angka dan pesan langsung sinkron
+    if (greetingContext) {
+      setGreetingContext({
+        ...greetingContext,
+        totalPcsHariIni: totalBaru,
+      });
+    }
+
+    // Kolom angka di-reset agar form langsung siap diisi lagi (maksimal 3 ketukan)
+    setQty(100);
+    setIsSubmitting(false);
   };
 
   if (projects.length === 0) {
@@ -195,16 +264,16 @@ export function InputClient({
 
   return (
     <div className="space-y-4 max-w-lg mx-auto">
-      {/* Toast Notifikasi Floating */}
-      {toastMessage && (
-        <div
-          role="status"
-          className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-forest-900 text-lime-400 px-4 py-2.5 rounded-pill shadow-2xl text-[13px] font-semibold flex items-center gap-2 border border-lime-400/30 animate-in fade-in slide-in-from-top-4 duration-200"
-        >
-          <CheckCircle2 className="w-4 h-4 text-lime-400 stroke-[2.5]" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
+      {/* Sapaan Hangat Maskot Fiko di Atas Form Input */}
+      {greetingContext && <DailyGreeting context={greetingContext} />}
+
+      {/* Modal / Sheet Perayaan Setelah Kirim Entri */}
+      <SubmissionCelebrationModal
+        data={celebrationData}
+        isOpen={isCelebrationOpen}
+        onClose={() => setIsCelebrationOpen(false)}
+        onInputAgain={() => setIsCelebrationOpen(false)}
+      />
 
       {/* Kartu Formulir Input Utama */}
       <Card className="p-5 sm:p-6 shadow-card">
@@ -215,10 +284,53 @@ export function InputClient({
         />
 
         <CardContent className="p-0 pt-1">
-          {errorMessage && (
+          {errorState && errorState.type === "validation" && (
             <div className="mb-4 p-3 rounded-panel bg-negative/10 border border-negative/20 text-negative text-[13px] flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 stroke-[2]" />
-              <span>{errorMessage}</span>
+              <span>{errorState.message}</span>
+            </div>
+          )}
+
+          {errorState && errorState.type === "duplicate" && (
+            <div className="mb-4 p-4 rounded-card bg-emerald-50 border border-emerald-200 text-forest-900 text-[13px] flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-forest-900 shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-2">
+                <p className="font-semibold text-ink text-[14px]">Input Sudah Masuk</p>
+                <p className="text-muted text-[13px]">{errorState.message}</p>
+                <div className="pt-1">
+                  <Link href="/penjahit/riwayat">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-10 min-h-[44px] px-4 text-[13px] font-medium"
+                    >
+                      Lihat Riwayat
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {errorState && errorState.type === "failed" && (
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="mb-4 p-4 rounded-card bg-surface-muted border border-line text-ink text-center flex flex-col items-center justify-center gap-2"
+            >
+              <Mascot pose="gagal" size={96} animate={true} />
+              <h4 className="text-[15px] font-semibold text-ink">Gagal Terkirim</h4>
+              <p className="text-[13px] text-muted max-w-xs">{errorState.message}</p>
+              <Button
+                type="button"
+                onClick={(e) => handleSubmit(e)}
+                variant="primary"
+                className="mt-2 min-h-[44px] h-11 px-5 text-[13px]"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Mencoba lagi..." : "Coba Lagi"}
+              </Button>
             </div>
           )}
 
@@ -255,11 +367,10 @@ export function InputClient({
                     value={selectedProjectId}
                     onChange={(e) => handleProjectChange(e.target.value)}
                     disabled={projects.length === 1 || isSubmitting}
-                    className={`w-full min-h-[56px] h-14 pl-4 pr-11 bg-surface-muted border border-line rounded-[14px] text-[16px] text-ink font-medium appearance-none transition-all truncate focus:outline-none focus:border-forest-900 focus:ring-2 focus:ring-forest-900/10 ${
-                      projects.length === 1
-                        ? "cursor-not-allowed opacity-90 select-none"
-                        : "cursor-pointer"
-                    }`}
+                    className={`w-full min-h-[56px] h-14 pl-4 pr-11 bg-surface-muted border border-line rounded-[14px] text-[16px] text-ink font-medium appearance-none transition-all truncate focus:outline-none focus:border-forest-900 focus:ring-2 focus:ring-forest-900/10 ${projects.length === 1
+                      ? "cursor-not-allowed opacity-90 select-none"
+                      : "cursor-pointer"
+                      }`}
                   >
                     {projects.length > 1 && !selectedProjectId && (
                       <option value="" disabled hidden>

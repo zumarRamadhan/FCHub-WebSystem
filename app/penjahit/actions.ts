@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requirePenjahitSession } from "@/lib/auth-server";
+import { getTailorGreetingContextServer } from "@/lib/messages-server";
 import {
   createEntrySchema,
   updateEntrySchema,
@@ -36,6 +37,30 @@ export async function createEntryAction(data: CreateEntryInput) {
 
     if (project.status !== "aktif") {
       return { success: false, error: "Tidak dapat menginput pada proyek yang sudah tidak aktif." };
+    }
+
+    // 2. Cegah input ganda saat "Coba lagi":
+    // Periksa apakah ada entri dengan penjahit, proyek, tanggal kerja, dan jumlah yang sama
+    // yang dibuat dalam 2 menit terakhir dan bukan berstatus 'ditolak'
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const { data: duplicateEntry } = await supabase
+      .from("production_entries")
+      .select("id")
+      .eq("user_id", session.id)
+      .eq("project_id", parsed.project_id)
+      .eq("tanggal_kerja", parsed.tanggal_kerja)
+      .eq("qty", parsed.qty)
+      .neq("status", "ditolak")
+      .gte("dibuat_pada", twoMinutesAgo)
+      .limit(1)
+      .maybeSingle();
+
+    if (duplicateEntry) {
+      return {
+        success: false,
+        alreadyRecorded: true,
+        error: "Sepertinya input ini sudah tercatat",
+      };
     }
 
     // Insert ke tabel production_entries.
@@ -153,6 +178,20 @@ export async function deleteEntryAction(id: string) {
     return { success: true };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Gagal menghapus entri.";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Mengambil konteks sapaan dan status maskot penjahit untuk tanggal tertentu
+ */
+export async function getGreetingContextAction(tanggalKerja?: string) {
+  try {
+    const session = await requirePenjahitSession();
+    const ctx = await getTailorGreetingContextServer(session.id, tanggalKerja);
+    return { success: true, data: ctx };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Gagal memuat konteks sapaan.";
     return { success: false, error: message };
   }
 }

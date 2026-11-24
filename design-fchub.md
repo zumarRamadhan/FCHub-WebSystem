@@ -257,3 +257,73 @@ Petakan token ke tema (`colors`: `bg`, `surface`, `lime`, `forest`, `ink`, `mute
 - Tabel lebar di mobile; ganti dengan daftar kartu.
 - Teks putih di atas lime.
 - Lebih dari satu kartu lime dalam satu layar.
+
+---
+
+## 11. Maskot dan Ucapan (Pesan Hangat Penjahit)
+
+Sistem FCHub menyediakan sapaan harian sebelum input dan perayaan ucapan setelah mengirim hasil kerja harian menggunakan karakter maskot **Fiko** (kucing hijau berdasi yang ramah dan memotivasi).
+
+### 11.1 Pemetaan Enam Pose Maskot
+Semua pose maskot disimpan sebagai berkas WebP transparan teroptimasi ($\le 480$ px, target $\le 80$ KB, bebas layout shift) di `public/mascot/`, dengan berkas resolusi tinggi asli diarsipkan di `design-assets/mascot/`:
+1. **`ajakan`** (`/mascot/pose-target-harian.webp`): Kucing hijau berdasi, mata terpejam tersenyum, menunjuk ke samping mengajak bekerja.
+2. **`tercapai`** (`/mascot/pose-target-tercapai.webp`): Kucing hijau berdasi melompat gembira dengan jempol merayakan pencapaian target harian.
+3. **`melampaui`** (`/mascot/pose-melampaui-target.webp`): Kucing hijau berdasi terkejut senang, mata berbintang saat hasil kerja melampaui target harian ($\ge 125\%$) atau rekor pribadi baru.
+4. **`istirahat`** (`/mascot/pose-beristirahat.webp`): Kucing hijau berdasi duduk santai melipat kaki/bersandar tenang, untuk sapaan hari libur kalender kerja tanpa input.
+5. **`gagal`** (`/mascot/pose-gagal-terkirim.webp`): Kucing hijau berdasi ekspresi khawatir/bingung memegang kepala atau cemas, untuk indikasi gagal kirim / offline.
+6. **`belumCapai`** (`/mascot/pose-belum-capaitarget.webp`): Kucing hijau berdasi menatap penuh harap dan memberi semangat hangat, untuk kartu sapaan sore/malam bila input kerja belum mencapai target harian.
+
+### 11.2 Aturan Animasi CSS
+- Animasi dibuat murni dengan CSS (`transform` dan `opacity`), tanpa library eksternal.
+- **Ajakan**: Muncul dengan fade-up singkat, lalu gerakan melayang halus (`translateY: ±5px`, 2.4 detik, `ease-in-out` berulang) disertai kemiringan bergantian (`±1.5°`).
+- **Tercapai**: Pop-in cepat (skala $0.7 \rightarrow 1.08 \rightarrow 1.0$, durasi 450 ms), satu kali lompatan ringan, lalu gerakan melayang halus.
+- **Melampaui**: Pop-in lebih dramatis (skala $0.6 \rightarrow 1.12 \rightarrow 1.0$), goyangan kecil, 4 partikel bintang CSS berkilau di sekitarnya satu kali putar, lalu gerakan melayang halus.
+- **Istirahat**: Bernapas pelan (`scale(1)` ke `scale(1.02)`, durasi 4 detik, `ease-in-out` berulang), tanpa gerakan naik-turun atau miring.
+- **Gagal**: Bergoyang horizontal kecil sekali lalu diam (`translateX: ±4px`, 2 siklus ~400 ms, `ease-in-out` tidak berulang).
+- **Belum Capai**: Melayang halus pelan (`translateY: ±3px`, durasi 3 detik, `ease-in-out` berulang).
+- **Aksesibilitas & Pengurangan Gerak**:
+  - Dilarang memakai efek zoom besar yang berulang.
+  - Menghormati pengaturan sistem `prefers-reduced-motion` (gerakan transform dinonaktifkan, hanya fade).
+  - Dilengkapi tombol toggle pengguna "Animasi Maskot" (nyala/mati) yang disimpan di `localStorage` (dengan fallback `try/catch`).
+
+### 11.3 Tampilan Sapaan & Perayaan Setelah Kirim
+1. **Sapaan Harian (`DailyGreeting`)**:
+   - Tampil di atas form `/penjahit/input` dan di Beranda penjahit (tepat di atas ring target produksi).
+   - Dimensi maskot: tinggi 96 px di layar HP dan 120 px di layar desktop.
+   - Statis (bukan modal), tidak menambah ketukan alur kerja penjahit.
+   - Atribut aksesibilitas: `role="status"` dan `aria-live="polite"` dengan kontras minimal 4.5:1.
+   - **Kondisi Hari Libur Tanpa Input**: Kartu sapaan menampilkan pose `istirahat` bernapas pelan dengan pesan santai (*"Hari ini libur kalender. Selamat beristirahat!"*) tanpa ajakan mengejar target.
+   - **Kondisi Sore/Malam Belum Capai Target**: Jika penjahit sudah mencatat sebagian hasil kerja ($0 < \text{total} < \text{target}$) pada sore ($\ge 15.00$) atau malam hari, kartu sapaan menggunakan pose `belumCapai` dengan kalimat hangat penuh motivasi (*"Sedikit demi sedikit lama-lama jadi bukit. Tetap semangat!"*) tanpa kata menyindir/menyalahkan. Fitur ini dapat dinonaktifkan via toggle `PAKAI_POSE_BELUM_CAPAI = false` di `lib/config.ts` untuk kembali ke pose `ajakan`.
+2. **Ucapan Setelah Kirim (`SubmissionCelebrationModal`)**:
+   - Tampil **HANYA** setelah Server Action `createEntryAction` dikonfirmasi berhasil di database.
+   - Jika hasil kerja setelah kirim masih di bawah target harian, ucapan perayaan **TETAP memakai pose `ajakan`** (tidak pernah memakai pose `belumCapai` pada modal perayaan kirim).
+   - **Perayaan Penuh** (bottom sheet di HP, dialog di desktop, maskot ~170 px): Ditampilkan pada input pertama di hari tersebut atau saat terjadi perubahan pose (misal naik dari ajakan ke tercapai/melampaui). Dilengkapi tombol "Input Lagi" dan "Lihat Riwayat", serta teks kecil penenang *"Menunggu persetujuan owner"*. Hilang otomatis setelah ~3.5 detik atau saat diketuk.
+   - **Perayaan Kompak** (toast/banner melayang): Ditampilkan pada input berikutnya di hari yang sama tanpa perubahan pose. Hilang otomatis setelah ~2.5 detik.
+   - **Tanpa Nominal Upah**: Ucapan dan perayaan dilarang menyebut nominal rupiah karena entri baru berstatus `menunggu` dan belum diverifikasi owner.
+3. **Kondisi Gagal Terkirim & Mode Offline**:
+   - Menggunakan maskot pose **`gagal`** (tinggi 96 px) dengan animasi goyang kecil sekali lalu diam (`mascot-shake`).
+   - Kartu peringatan memiliki atribut aksesibilitas `role="alert"` dan `aria-live="assertive"`.
+   - Pesan ramah dan tidak menyalahkan penjahit:
+     - Jika offline (`!navigator.onLine`): *"Sepertinya sinyal sedang putus. Isianmu aman, coba kirim lagi saat tersambung."*
+     - Jika error jaringan/server: *"Gagal terkirim. Isianmu aman, coba lagi."*
+   - Isian form (jumlah pcs, tanggal, dan proyek) **tetap utuh** di layar sehingga penjahit tidak perlu mengetik ulang.
+   - Dilengkapi tombol tindakan **"Coba Lagi"** dengan tinggi minimal $\ge 44 \times 44$ px untuk retry langsung.
+   - Bebas suara bising, konfeti, atau perayaan.
+4. **Proteksi Anti Input Ganda 2 Menit**:
+   - Untuk mencegah duplikasi entri saat koneksi lambat atau penjahit mengetuk tombol "Coba Lagi" berulang kali, Server Action memeriksa entri identik (`user_id`, `project_id`, `tanggal_kerja`, `qty`, status bukan ditolak) dalam rentang 2 menit terakhir (`dibuat_pada >= now() - interval '2 minutes'`).
+   - Jika terdeteksi duplikasi, server mengembalikan respon `alreadyRecorded: true`.
+   - Antarmuka tidak menampilkan kartu gagal, melainkan kotak ramah: *"Sepertinya input ini sudah tercatat"* disertai tombol **"Lihat Riwayat"** dan formulir dikosongkan/reset agar tidak memicu duplikasi lanjutan.
+
+### 11.4 Cara Menambah Pose Baru
+Seluruh pemetaan pose dikelola di **SATU tempat** di `lib/mascot.ts`. Untuk menambah pose baru:
+1. Tambahkan nama pose pada tipe `MascotPose` di `lib/mascot.ts`.
+2. Daftarkan path berkas WebP, lebar, tinggi, dan deskripsi pada objek `MASCOT_ASSETS`.
+3. Tentukan aturan pemicu pesan di `lib/messages.ts`.
+4. Tambahkan kelas animasi pendukung di `app/globals.css`.
+
+### 11.5 Catatan Bisnis & TODO(owner)
+- `TODO(owner)`: Konfirmasi nama panggilan resmi maskot konveksi Firdaus Collection (nilai konfigurasi saat ini: `"Fiko"` di `lib/config.ts`).
+- `TODO(owner)`: Konfirmasi ambang kelipatan untuk status melampaui target (nilai konfigurasi saat ini: `MELAMPAUI_RASIO = 1.25` atau 125% di `lib/config.ts`).
+- `TODO(owner)`: Konfirmasi apakah target harian konveksi seragam 100 pcs untuk semua penjahit atau berbeda per proyek/tahap kerja.
+- `TODO(owner)`: Konfirmasi apakah penggunaan pose `belumCapai` pada sapaan sore/malam hari dirasa memotivasi atau justru membebani penjahit (dapat dinonaktifkan kapan saja dengan `PAKAI_POSE_BELUM_CAPAI = false` di `lib/config.ts`).
+

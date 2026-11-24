@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { InputClient, ActiveProject } from "./input-client";
+import { getJakartaTodayString } from "@/lib/format";
+import { getTailorGreetingContextServer } from "@/lib/messages-server";
 
 export default async function PenjahitInputPage() {
   const supabase = createClient();
@@ -39,5 +41,17 @@ export default async function PenjahitInputPage() {
     }
   }
 
-  return <InputClient projects={projects} initialLastUsedProjectId={lastUsedProjectId} />;
+  // 3. Konteks Sapaan Maskot Fiko untuk Form Input
+  const todayStr = getJakartaTodayString();
+  const initialGreetingContext = user
+    ? await getTailorGreetingContextServer(user.id, todayStr)
+    : undefined;
+
+  return (
+    <InputClient
+      projects={projects}
+      initialLastUsedProjectId={lastUsedProjectId}
+      initialGreetingContext={initialGreetingContext}
+    />
+  );
 }

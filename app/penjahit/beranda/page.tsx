@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { BerandaClient } from "./beranda-client";
 import { getWeekDateRange, calculateEntryWage } from "@/lib/wage";
 import { getJakartaTodayString } from "@/lib/format";
+import { getTailorGreetingContextServer } from "@/lib/messages-server";
 
 export default async function PenjahitBerandaPage() {
   const supabase = createClient();
@@ -178,16 +179,20 @@ export default async function PenjahitBerandaPage() {
     })
   );
 
+  // 6. Konteks Sapaan Maskot Fiko untuk Beranda
+  const greetingContext = await getTailorGreetingContextServer(user.id, todayStr);
+
   return (
     <BerandaClient
       pcsDisetujuiMingguIni={pcsDisetujuiMingguIni}
       upahMingguIni={upahMingguIni}
       pcsHariIni={pcsHariIni}
-      targetHariIni={100}
+      targetHariIni={greetingContext.targetHarian}
       paymentInfo={paymentInfo}
       rewardProgressList={rewardProgressList}
       recentEntries={recentEntries}
       weekRates={weekRates}
+      greetingContext={greetingContext}
     />
   );
 }
